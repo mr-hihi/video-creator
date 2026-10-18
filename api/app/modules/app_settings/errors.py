@@ -1,0 +1,2 @@
+class InvalidSettingError(Exception):
+    pass
