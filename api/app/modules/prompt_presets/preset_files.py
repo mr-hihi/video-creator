@@ -13,16 +13,24 @@ from app.modules.prompt_presets.prompt_texts import (
 )
 
 EXPORT_FORMAT = "video-tool-prompt-preset"
-EXPORT_FORMAT_VERSION = 3
+EXPORT_FORMAT_VERSION = 4
 FIRST_FORMAT_PROMPT_KEYS = (
     PromptKey.VIDEO_TO_MARKDOWN,
     PromptKey.CHARACTER_IMAGE,
     PromptKey.CHARACTER_VOICE,
     PromptKey.SCENE,
 )
+SECOND_FORMAT_PROMPT_KEYS = (*FIRST_FORMAT_PROMPT_KEYS, PromptKey.FILM_SCRIPT)
+CLONE_PROMPT_KEYS = (
+    PromptKey.CLONE_ASSETS,
+    PromptKey.CLONE_SHOTS,
+    PromptKey.CLONE_LOCALIZATION,
+    PromptKey.CLONE_SCRIPT,
+)
 PROMPT_KEYS_BY_FORMAT_VERSION: dict[int, tuple[PromptKey, ...]] = {
     1: FIRST_FORMAT_PROMPT_KEYS,
-    2: (*FIRST_FORMAT_PROMPT_KEYS, PromptKey.FILM_SCRIPT),
+    2: SECOND_FORMAT_PROMPT_KEYS,
+    3: (*SECOND_FORMAT_PROMPT_KEYS, *CLONE_PROMPT_KEYS),
     EXPORT_FORMAT_VERSION: tuple(PromptKey),
 }
 DEFAULT_PROMPTS_BY_KEY = preset_prompts_to_prompts_by_key(DEFAULT_PRESET_PROMPTS)

@@ -16,13 +16,18 @@ from app.modules.prompt_presets.prompt_texts import (
     DEFAULT_PRESET_PROMPTS,
     CloneLocalizationRequestText,
     CloneScriptRequestText,
+    FilmOutlineRequestText,
     FilmScriptAnalysis,
     FilmScriptRequestText,
+    StoryBibleRequestText,
+    StoryContextText,
     build_clone_localization_message,
     build_clone_script_message,
     build_clone_shots_message,
+    build_film_outline_message,
     build_film_script_message,
     build_moment_request_message,
+    build_story_bible_message,
     build_video_notes_message,
     build_video_notes_message_with_characters,
     describe_app_added_parts,
@@ -37,11 +42,38 @@ FIRST_FORMAT_PROMPTS = {
     "scene": "S",
 }
 SECOND_FORMAT_PROMPTS = {**FIRST_FORMAT_PROMPTS, "filmScript": "F"}
+THIRD_FORMAT_PROMPTS = {
+    **SECOND_FORMAT_PROMPTS,
+    "cloneAssets": "A",
+    "cloneShots": "H",
+    "cloneLocalization": "L",
+    "cloneScript": "R",
+}
 OLD_FILE_BASE = {"format": "video-tool-prompt-preset", "name": "Old export"}
-FILM_SCRIPT_TEXT = FilmScriptRequestText(
+ANALYSIS = FilmScriptAnalysis(
+    character_image_prompts="## Mai",
+    character_voice_prompts="## Mai voice",
+    scene_prompts="## 00:01 — Pier",
+    frame_names=["moment-01-00m00s.jpg"],
+)
+STORY_CONTEXT = StoryContextText(
     series_name="Harbor Mysteries",
     premise="A fishing town hides a drowned city.",
+    story_bible="Mai lives at the pier.",
     language_name="English",
+    earlier_episode_lines=["1. The Bell — A bell rings underwater.", "Summary: Mai hears it."],
+    idea="A storm",
+    analysis=None,
+)
+ANALYSIS_CONTEXT = replace(
+    STORY_CONTEXT,
+    premise=None,
+    story_bible=None,
+    earlier_episode_lines=[],
+    analysis=ANALYSIS,
+)
+FILM_SCRIPT_TEXT = FilmScriptRequestText(
+    context=STORY_CONTEXT,
     frame_label="16:9 landscape",
     style_line="Anime — cel shading",
     target_seconds="60",
@@ -49,15 +81,22 @@ FILM_SCRIPT_TEXT = FilmScriptRequestText(
     allow_dialogue=False,
     allow_narration=False,
     cast_lines=["Mai (character): A girl. Voice: Soft"],
-    earlier_episode_lines=["1. The Bell — A bell rings underwater."],
-    idea="A storm",
-    analysis=None,
+    outline_lines=["1. The pier: Mai waits.", "2. The storm: The sea rises."],
+    part_number="2",
+    story_so_far_lines=["1. Mai waited at the pier."],
 )
-ANALYSIS = FilmScriptAnalysis(
-    character_image_prompts="## Mai",
-    character_voice_prompts="## Mai voice",
-    scene_prompts="## 00:01 — Pier",
-    frame_names=["moment-01-00m00s.jpg"],
+FILM_OUTLINE_TEXT = FilmOutlineRequestText(
+    context=STORY_CONTEXT,
+    target_seconds="7200",
+    cast_lines=["Mai (character): A girl"],
+)
+STORY_BIBLE_TEXT = StoryBibleRequestText(
+    series_name="Harbor Mysteries",
+    premise=None,
+    language_name="English",
+    story_bible=None,
+    episode_line="Episode 2: The Storm — The sea rises.",
+    part_lines=["1. The pier", "Mai waited at the pier."],
 )
 
 
@@ -82,14 +121,19 @@ def round_trip_draft():
     params=[
         [],
         {**VALID_PAYLOAD, "format": "something-else"},
-        {**VALID_PAYLOAD, "formatVersion": 4},
+        {**VALID_PAYLOAD, "formatVersion": 5},
         {**VALID_PAYLOAD, "name": 7},
         {**VALID_PAYLOAD, "prompts": "all of them"},
         {**VALID_PAYLOAD, "prompts": {**VALID_PAYLOAD["prompts"], "scene": None}},
         {**OLD_FILE_BASE, "formatVersion": 2, "prompts": FIRST_FORMAT_PROMPTS},
+        {**OLD_FILE_BASE, "formatVersion": 3, "prompts": SECOND_FORMAT_PROMPTS},
         {
             **VALID_PAYLOAD,
             "prompts": {k: v for k, v in VALID_PAYLOAD["prompts"].items() if k != "cloneScript"},
+        },
+        {
+            **VALID_PAYLOAD,
+            "prompts": {k: v for k, v in VALID_PAYLOAD["prompts"].items() if k != "storyBible"},
         },
     ]
 )
@@ -110,6 +154,12 @@ def second_format_draft():
 
 
 @pytest.fixture
+def third_format_draft():
+    payload = {**OLD_FILE_BASE, "formatVersion": 3, "prompts": THIRD_FORMAT_PROMPTS}
+    return export_json_to_preset_draft(json.dumps(payload).encode("utf-8"))
+
+
+@pytest.fixture
 def idea_film_script_message():
     return build_film_script_message(FILM_SCRIPT_TEXT)
 
@@ -119,17 +169,44 @@ def analysis_film_script_message():
     return build_film_script_message(
         replace(
             FILM_SCRIPT_TEXT,
-            premise=None,
+            context=ANALYSIS_CONTEXT,
             cast_lines=[],
-            earlier_episode_lines=[],
-            analysis=ANALYSIS,
+            outline_lines=["1. The pier: Mai waits."],
+            part_number="1",
+            story_so_far_lines=[],
         )
     )
 
 
 @pytest.fixture
 def analysis_without_direction_message():
-    return build_film_script_message(replace(FILM_SCRIPT_TEXT, idea=None, analysis=ANALYSIS))
+    return build_film_script_message(
+        replace(FILM_SCRIPT_TEXT, context=replace(ANALYSIS_CONTEXT, idea=None))
+    )
+
+
+@pytest.fixture
+def idea_film_outline_message():
+    return build_film_outline_message(FILM_OUTLINE_TEXT)
+
+
+@pytest.fixture
+def castless_film_outline_message():
+    return build_film_outline_message(
+        replace(FILM_OUTLINE_TEXT, context=ANALYSIS_CONTEXT, cast_lines=[])
+    )
+
+
+@pytest.fixture
+def first_story_bible_message():
+    return build_story_bible_message(STORY_BIBLE_TEXT)
+
+
+@pytest.fixture
+def later_story_bible_message():
+    return build_story_bible_message(
+        replace(STORY_BIBLE_TEXT, premise="A drowned city.", story_bible="Mai lives at the pier.")
+    )
 
 
 @pytest.fixture(params=[b"hello", b"\xff\xfe"])
@@ -178,7 +255,7 @@ def test_export_json_round_trips_name_and_prompts(round_trip_draft):
 def test_export_json_carries_format_and_camel_case_prompt_keys():
     assert (VALID_PAYLOAD["format"], VALID_PAYLOAD["formatVersion"]) == (
         "video-tool-prompt-preset",
-        3,
+        4,
     )
     assert sorted(VALID_PAYLOAD["prompts"]) == [
         "characterImage",
@@ -187,8 +264,10 @@ def test_export_json_carries_format_and_camel_case_prompt_keys():
         "cloneLocalization",
         "cloneScript",
         "cloneShots",
+        "filmOutline",
         "filmScript",
         "scene",
+        "storyBible",
         "videoToMarkdown",
     ]
 
@@ -211,6 +290,21 @@ def test_second_format_file_gets_code_defaults_for_clone_prompts(second_format_d
         character_voice="C",
         scene="S",
         film_script="F",
+    )
+
+
+def test_third_format_file_gets_code_defaults_for_outline_and_story_bible(third_format_draft):
+    assert third_format_draft.prompts == replace(
+        DEFAULT_PRESET_PROMPTS,
+        video_to_markdown="V",
+        character_image="I",
+        character_voice="C",
+        scene="S",
+        film_script="F",
+        clone_assets="A",
+        clone_shots="H",
+        clone_localization="L",
+        clone_script="R",
     )
 
 
@@ -261,6 +355,16 @@ def test_describe_app_added_parts_shows_placeholders(app_added_parts):
     assert app_added_parts.scene == app_added_parts.character_voice
     assert "add up to about {target_duration_s}s" in app_added_parts.film_script
     assert "a typical clip lasts {clip}s" in app_added_parts.film_script
+    assert "Write part {k} now." in app_added_parts.film_script
+    assert app_added_parts.film_outline.startswith(
+        "Reply shape (JSON schema, fixed): title, logline, parts[] { title, plan, durationS }"
+    )
+    assert "Summary: {summary, when set}" in app_added_parts.film_outline
+    assert "Each part lasts 8-600 s." in app_added_parts.film_outline
+    assert app_added_parts.story_bible.startswith(
+        "Reply shape (JSON schema, fixed): summary, storyBible"
+    )
+    assert "Keep the story bible under 20000 characters." in app_added_parts.story_bible
     assert app_added_parts.clone_assets.startswith("Reply shape (JSON schema, fixed): assets[]")
     assert "Give exactly one entry per frame." in app_added_parts.clone_shots
     assert "Target country: {target country}" in app_added_parts.clone_localization
@@ -274,8 +378,11 @@ def test_describe_app_added_parts_shows_placeholders(app_added_parts):
 def test_film_script_message_for_an_idea(idea_film_script_message):
     assert idea_film_script_message == (
         "Series: Harbor Mysteries\n"
-        "Premise: A fishing town hides a drowned city.\n"
-        "Language of narration and dialogue: English\n"
+        "Premise: A fishing town hides a drowned city.\n\n"
+        "Story bible:\nMai lives at the pier.\n\n"
+        "Language of narration and dialogue: English\n\n"
+        "Earlier episodes:\n1. The Bell — A bell rings underwater.\nSummary: Mai hears it.\n\n"
+        "Episode idea:\nA storm\n\n"
         "Frame: 16:9 landscape\n"
         "Style: Anime — cel shading\n\n"
         "Write scenes whose clip lengths, each minus its first second, add up to about 60s. "
@@ -286,24 +393,65 @@ def test_film_script_message_for_an_idea(idea_film_script_message):
         "Narration: off — leave narratorText empty.\n\n"
         "Cast:\nMai (character): A girl. Voice: Soft\n"
         "Reuse these names exactly. Add a character only when the story needs one.\n\n"
-        "Earlier episodes:\n1. The Bell — A bell rings underwater.\n\n"
-        "Episode idea:\nA storm"
+        "Episode outline:\n1. The pier: Mai waits.\n2. The storm: The sea rises.\n"
+        "Write part 2 now.\n\n"
+        "Story so far:\n1. Mai waited at the pier."
     )
 
 
 def test_film_script_message_for_a_film_analysis(analysis_film_script_message):
     assert "Premise:" not in analysis_film_script_message
+    assert "Story bible:" not in analysis_film_script_message
     assert "Cast:" not in analysis_film_script_message
     assert "Earlier episodes:" not in analysis_film_script_message
-    assert analysis_film_script_message.endswith(
+    assert "Story so far:" not in analysis_film_script_message
+    assert (
         "Adapt this film analysis:\n\nCharacter image prompts:\n## Mai\n\n"
         "Character voice prompts:\n## Mai voice\n\nScene prompts:\n## 00:01 — Pier\n\n"
-        "Reference frames:\nmoment-01-00m00s.jpg\n\nExtra direction:\nA storm"
+        "Extra direction:\nA storm\n\nFrame: 16:9 landscape"
+    ) in analysis_film_script_message
+    assert analysis_film_script_message.endswith(
+        "Episode outline:\n1. The pier: Mai waits.\nWrite part 1 now.\n\n"
+        "Reference frames:\nmoment-01-00m00s.jpg"
     )
 
 
 def test_film_script_message_without_extra_direction(analysis_without_direction_message):
+    assert "Extra direction:" not in analysis_without_direction_message
     assert analysis_without_direction_message.endswith("Reference frames:\nmoment-01-00m00s.jpg")
+
+
+def test_film_outline_message_asks_for_parts_then_lists_the_cast(idea_film_outline_message):
+    assert idea_film_outline_message.endswith(
+        "Episode idea:\nA storm\n\n"
+        "Split the episode into parts whose lengths add up to about 7200s. "
+        "Each part lasts 8-600 s.\n\n"
+        "Cast:\nMai (character): A girl"
+    )
+
+
+def test_film_outline_message_without_a_cast(castless_film_outline_message):
+    assert "Cast:" not in castless_film_outline_message
+    assert castless_film_outline_message.endswith("Each part lasts 8-600 s.")
+
+
+def test_story_bible_message_for_the_first_bible(first_story_bible_message):
+    assert first_story_bible_message == (
+        "Series: Harbor Mysteries\n"
+        "Language of narration and dialogue: English\n\n"
+        "Current story bible: (empty)\n\n"
+        "Episode 2: The Storm — The sea rises.\n\n"
+        "Parts:\n1. The pier\nMai waited at the pier.\n\n"
+        "Keep the story bible under 20000 characters."
+    )
+
+
+def test_story_bible_message_carries_the_current_bible(later_story_bible_message):
+    assert later_story_bible_message.startswith(
+        "Series: Harbor Mysteries\nPremise: A drowned city.\n"
+        "Language of narration and dialogue: English\n\n"
+        "Current story bible:\nMai lives at the pier.\n\n"
+    )
 
 
 def test_clone_shots_message_lists_assets_then_notes():

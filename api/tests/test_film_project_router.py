@@ -41,25 +41,30 @@ PROJECT_BODY = {
 }
 
 
-def build_project(status: ProjectStatus) -> FilmProject:
-    return FilmProject(
-        id="p-1",
-        name="Harbor Mysteries",
-        description=None,
-        language=FilmLanguage.ENGLISH,
-        orientation=Orientation.LANDSCAPE,
-        style_id="anime",
-        clip_duration_s=6,
-        allow_dialogue=True,
-        allow_narration=True,
-        narrator_voice_id=None,
-        allow_music=True,
-        status=status,
-        last_episode_number=0,
-        flow_project_id=None,
-        created_at=CREATED_AT,
-        updated_at=CREATED_AT,
-    )
+STORY_BIBLE_UPDATED_AT = CREATED_AT.replace(microsecond=0)
+STORY_BIBLE = "The harbor sank a century ago."
+
+
+def build_project(status: ProjectStatus, **overrides) -> FilmProject:
+    fields = {
+        "id": "p-1",
+        "name": "Harbor Mysteries",
+        "description": None,
+        "language": FilmLanguage.ENGLISH,
+        "orientation": Orientation.LANDSCAPE,
+        "style_id": "anime",
+        "clip_duration_s": 6,
+        "allow_dialogue": True,
+        "allow_narration": True,
+        "narrator_voice_id": None,
+        "allow_music": True,
+        "status": status,
+        "last_episode_number": 0,
+        "flow_project_id": None,
+        "created_at": CREATED_AT,
+        "updated_at": CREATED_AT,
+    }
+    return FilmProject(**{**fields, **overrides})
 
 
 MAI = Character(
@@ -101,6 +106,33 @@ DETAIL = ProjectDetail(
     is_look_fixed=False,
     open_requests=[REQUEST],
 )
+STORY_BIBLE_SUMMARY = ProjectSummary(
+    build_project(
+        ProjectStatus.ACTIVE,
+        story_bible=STORY_BIBLE,
+        story_bible_episode_id="e-3",
+        story_bible_updated_at=STORY_BIBLE_UPDATED_AT,
+    ),
+    "Anime",
+    2,
+)
+STORY_BIBLE_DETAIL = ProjectDetail(
+    summary=STORY_BIBLE_SUMMARY,
+    characters=[],
+    episodes=[],
+    is_look_fixed=False,
+    open_requests=[],
+)
+STORY_BIBLE_FIELDS = {
+    "storyBible": STORY_BIBLE,
+    "storyBibleEpisodeId": "e-3",
+    "storyBibleUpdatedAt": STORY_BIBLE_UPDATED_AT.strftime("%Y-%m-%dT%H:%M:%SZ"),
+}
+NO_STORY_BIBLE_FIELDS = {
+    "storyBible": None,
+    "storyBibleEpisodeId": None,
+    "storyBibleUpdatedAt": None,
+}
 
 
 @pytest.fixture
@@ -199,6 +231,55 @@ def patched(client, service):
         ),
         service.update_project,
     )
+
+
+@pytest.fixture(params=[("  New canon  ", "  New canon  "), (None, "")])
+def patched_story_bible(request, client, service):
+    sent_story_bible, expected_story_bible = request.param
+    outcome = to_outcome(
+        client.patch("/films/projects/p-1", json={"storyBible": sent_story_bible}),
+        service.update_project,
+    )
+    return SimpleNamespace(
+        actual=(outcome.status_code, outcome.call.args),
+        expected=(200, ("p-1", ProjectChanges(story_bible=expected_story_bible))),
+    )
+
+
+@pytest.fixture(
+    params=[
+        (InvalidFilmRequestError("Story bible must be at most 20000 characters"), 400),
+        (
+            FilmConflictError("Episode 3 is updating the story bible — try again when it finishes"),
+            409,
+        ),
+    ]
+)
+def rejected_story_bible_patch(request, client, service):
+    error, expected_status = request.param
+    service.update_project.side_effect = error
+    response = client.patch("/films/projects/p-1", json={"storyBible": "New canon"})
+    return SimpleNamespace(
+        actual=(response.status_code, response.json()),
+        expected=(expected_status, {"detail": str(error)}),
+    )
+
+
+@pytest.fixture(params=[(DETAIL, NO_STORY_BIBLE_FIELDS), (STORY_BIBLE_DETAIL, STORY_BIBLE_FIELDS)])
+def fetched_story_bible(request, client, service):
+    detail, expected_fields = request.param
+    service.get_project.return_value = detail
+    body = client.get("/films/projects/p-1").json()
+    return SimpleNamespace(
+        actual={field: body[field] for field in expected_fields}, expected=expected_fields
+    )
+
+
+@pytest.fixture
+def listed_story_bible(client, service):
+    service.list_projects.return_value = [STORY_BIBLE_SUMMARY]
+    body = client.get("/films/projects").json()
+    return {field: body[0][field] for field in STORY_BIBLE_FIELDS}
 
 
 @pytest.fixture
@@ -328,6 +409,22 @@ def test_patch_turns_sent_nulls_into_cleared_values(patched):
         "p-1",
         ProjectChanges(description="", clip_duration_s=10, narrator_voice_id=""),
     )
+
+
+def test_patch_passes_the_story_bible_and_turns_null_into_a_cleared_value(patched_story_bible):
+    assert patched_story_bible.actual == patched_story_bible.expected
+
+
+def test_patch_maps_story_bible_errors(rejected_story_bible_patch):
+    assert rejected_story_bible_patch.actual == rejected_story_bible_patch.expected
+
+
+def test_project_detail_carries_the_story_bible(fetched_story_bible):
+    assert fetched_story_bible.actual == fetched_story_bible.expected
+
+
+def test_project_list_carries_the_story_bible(listed_story_bible):
+    assert listed_story_bible == STORY_BIBLE_FIELDS
 
 
 def test_patch_rejects_an_unknown_orientation(bad_orientation_response):

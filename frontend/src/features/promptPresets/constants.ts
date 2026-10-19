@@ -11,7 +11,9 @@ export const PROMPT_SECTIONS: readonly PromptSection[] = [
   { key: "characterImage", title: "Character image prompts", usedBy: "Film Analysis" },
   { key: "characterVoice", title: "Character voice prompts", usedBy: "Film Analysis" },
   { key: "scene", title: "Scene prompts", usedBy: "Film Analysis" },
+  { key: "filmOutline", title: "Film outline", usedBy: "Film Studio" },
   { key: "filmScript", title: "Film script", usedBy: "Film Studio" },
+  { key: "storyBible", title: "Story bible", usedBy: "Film Studio" },
   { key: "cloneAssets", title: "Clone assets", usedBy: "Film Clone" },
   { key: "cloneShots", title: "Clone shots", usedBy: "Film Clone" },
   { key: "cloneLocalization", title: "Clone localization", usedBy: "Film Clone" },
@@ -38,5 +40,4 @@ export const CURRENT_VERSION_BADGE_LABEL = "Current";
 export const DEFAULT_PROMPT_BADGE_LABEL = "Default";
 export const CUSTOMIZED_PROMPT_BADGE_LABEL = "Customized";
 export const DEFAULT_PRESET_OPTION_SUFFIX = " (default)";
-export const UNSAVED_CHANGES_CONFIRMATION = "Discard unsaved changes?";
 export const SET_DEFAULT_FIRST_HINT = "Set another preset as default first";

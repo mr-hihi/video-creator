@@ -1,6 +1,8 @@
 # Workflow — running the workspace
 
-**Critical** — an agent never starts these; ask the user to run them in a separate terminal, then verify with `curl`.
+**Critical** — an agent never starts the dev stack; ask the user to run it in a separate terminal, then verify with `curl`.
+An agent may start the test stack in the background for E2E checks, reusing one already up, and stops it once the run
+is recorded.
 
 ## First-time setup
 

@@ -2,7 +2,7 @@
 
 > One file = one domain. Every section below belongs to the **Prompt Presets** domain.
 
-Named sets of the nine prompts the AI model (domain 8) runs inside the job pipelines, Film Clone and Film
+Named sets of the eleven prompts the AI model (domain 8) runs inside the job pipelines, Film Clone and Film
 Studio. The user sees the default text, edits it, keeps several presets, and picks one when creating a job;
 the job copies the prompts it needs at that moment (2.5). The same prompts serve Claude and Gemini.
 
@@ -12,7 +12,9 @@ the job copies the prompts it needs at that moment (2.5). The same prompts serve
 | Character image prompts | `characterImage` | Film Analysis (3.3) | `writing_character_image_prompts` |
 | Character voice prompts | `characterVoice` | Film Analysis (3.3) | `writing_character_voice_prompts` |
 | Scene prompts | `scene` | Film Analysis (3.3) | `writing_scene_prompts` |
+| Film outline | `filmOutline` | Film Studio (4.2) | `writing_outline` |
 | Film script | `filmScript` | Film Studio (4.2) | `writing_script` |
+| Story bible | `storyBible` | Film Studio (4.2) | `updating_story_bible` |
 | Clone assets | `cloneAssets` | Film Clone (5.2) | `extracting_assets` |
 | Clone shots | `cloneShots` | Film Clone (5.2) | `analyzing_shots` |
 | Clone localization | `cloneLocalization` | Film Clone (5.3) | `proposing` |
@@ -46,7 +48,7 @@ the job copies the prompts it needs at that moment (2.5). The same prompts serve
 | `version` | int | 1, 2, 3 … per preset; never reused, even after pruning |
 | `change` | enum | `created` \| `saved` \| `restored` \| `duplicated` \| `imported` |
 | `change_source` | string(120) \| null | `v{n}` for `restored`, `{name} v{n}` for `duplicated`, the file name for `imported` |
-| `video_to_markdown` / `character_image` / `character_voice` / `scene` / `film_script` / `clone_assets` / `clone_shots` / `clone_localization` / `clone_script` | text | the nine prompts |
+| `video_to_markdown` / `character_image` / `character_voice` / `scene` / `film_outline` / `film_script` / `story_bible` / `clone_assets` / `clone_shots` / `clone_localization` / `clone_script` | text | the eleven prompts |
 | `created_at` | datetime (UTC) | |
 
 Unique (`preset_id`, `version`). A preset's current prompts are those of version `current_version`.
@@ -131,12 +133,35 @@ Added by the app, for the three prompts above:
 - Voice and scene prompts only: the character image prompts answer of the same job under a
   `Characters:` heading, so the labels match.
 
+### Film outline (`filmOutline`)
+
+Default asks the model to:
+- split one episode of a series into parts, each one stretch of the story with a goal, a turn and an
+  ending that leads into the next part;
+- open the first part on a visual hook and end the last part on an unanswered question; a later episode
+  picks up the previous cliffhanger in its first part;
+- keep every fact of the story bible and of the earlier episodes' summaries true, unless the episode
+  changes it on screen;
+- give each part a title and a plan naming who is in it, where it happens, what happens and how it ends;
+- give each part the length its story needs, within the range given;
+- give a music prompt (genre, instruments, tempo, mood) and a thumbnail prompt (one striking frame, no
+  text);
+- write titles and plans in the language of narration, and character names exactly as the cast gives them.
+
+Added by the app:
+- Output shape (JSON schema): `title`, `logline`, `parts[] { title, plan, durationS }`, `musicPrompt`,
+  `thumbnailPrompt`. Parts are built from it, so the shape is fixed.
+- The user message of 4.2 § `writing_outline`: series, premise, story bible, language, earlier episodes
+  with their summaries, the idea or the film analysis, the target length with the 8–600 s part range, and
+  the cast.
+
+The reply is normalised as in 4.2 whatever the instructions say.
+
 ### Film script (`filmScript`)
 
 Default asks the model to:
-- write one episode of a series as scenes, one shot and one clip each, opening on a visual hook in the
-  first 3 s and ending on an unanswered question; a later episode picks up the previous cliffhanger in its
-  first scene;
+- write one part of an episode as scenes, one shot and one clip each, telling exactly what the part's plan
+  says and picking up where the story so far ends;
 - give each scene the clip length its action needs, 4–30 s: a quick beat short, a held or travelling moment
   long;
 - write each image prompt as action, setting, framing, lens and light — never faces, hair or build, which
@@ -149,18 +174,35 @@ Default asks the model to:
 - write narration that tells what the picture cannot show — motive, stakes, the ticking clock — never what
   is on screen: 18–22 words in Vietnamese, 20–24 in English, 12–16 when characters speak, for a 7 s window,
   scaled to the scene's clip length;
-- give a music prompt (genre, instruments, tempo, mood) and a thumbnail prompt (one striking frame, no
-  text);
+- end with a recap of the part: what happened and where each character stands at its end;
 - write character names exactly as the cast gives them.
 
 Added by the app:
-- Output shape (JSON schema): `title`, `logline`, `characters[] { name, entityType, description,
-  voiceDescription, referenceFrame }`, `scenes[] { imagePrompt, videoPrompt, narratorText,
-  characterNames[], durationS }`, `musicPrompt`, `thumbnailPrompt`. Scenes and characters are built from
-  it, so the shape is fixed.
-- The user message of 4.2 § `writing_script`: series, premise, language, frame, style, the target length
-  with the 4–30 s range and the project's typical clip length, the dialogue and narration lines, the cast,
-  earlier episodes, and the idea or the film analysis.
+- Output shape (JSON schema): `recap`, `characters[] { name, entityType, description, voiceDescription,
+  referenceFrame }`, `scenes[] { imagePrompt, videoPrompt, narratorText, characterNames[], durationS }`.
+  Scenes and characters are built from it, so the shape is fixed.
+- The user message of 4.2 § `writing_script`: series, premise, story bible, language, earlier episodes
+  with their summaries, the idea or the film analysis, frame, style, the part's target length with the
+  4–30 s range and the project's typical clip length, the dialogue and narration lines, the cast, the
+  episode outline with the part to write, and the story so far.
+
+The reply is normalised as in 4.2 whatever the instructions say.
+
+### Story bible (`storyBible`)
+
+Default asks the model to:
+- keep a running record of the series: world and rules, each character with their state, goals and
+  relationships, open threads, and the key events of each episode;
+- merge the episode into the current story bible — keep every fact still true, change or remove what the
+  episode made false, add what is new;
+- stay under the length given by shortening the events of old episodes first;
+- write a summary of the episode: what happens and where each character stands at its end;
+- write in the language of narration.
+
+Added by the app:
+- Output shape (JSON schema): `summary`, `storyBible`. Both are saved as they come, so the shape is fixed.
+- The user message of 4.2 § `updating_story_bible`: series, premise, language, the current story bible,
+  the episode's title and logline, each part with its recap or its scenes, and the length limit.
 
 The reply is normalised as in 4.2 whatever the instructions say.
 
@@ -260,9 +302,10 @@ Attachment `{safe name}.preset.json` — `{safe name}` built like `{stem}` in 1.
 ```json
 {
   "format": "video-tool-prompt-preset",
-  "formatVersion": 3,
+  "formatVersion": 4,
   "name": "Anime",
-  "prompts": { "videoToMarkdown": "…", "characterImage": "…", "characterVoice": "…", "scene": "…", "filmScript": "…",
+  "prompts": { "videoToMarkdown": "…", "characterImage": "…", "characterVoice": "…", "scene": "…",
+               "filmOutline": "…", "filmScript": "…", "storyBible": "…",
                "cloneAssets": "…", "cloneShots": "…", "cloneLocalization": "…", "cloneScript": "…" }
 }
 ```
@@ -276,10 +319,11 @@ Multipart `file`.
 | # | Rule | Result |
 |---|---|---|
 | 1 | File ≤ 1 MB | 413 `Preset file exceeds 1 MB` |
-| 2 | JSON with `format` = `video-tool-prompt-preset`, `formatVersion` 1, 2 or 3, string `name`, and string prompts — the first four keys for 1, the first five for 2, all nine for 3 | 400 `Not a prompt preset file` |
+| 2 | JSON with `format` = `video-tool-prompt-preset`, `formatVersion` 1–4, string `name`, and the string prompts of that version — `videoToMarkdown`, `characterImage`, `characterVoice`, `scene` for 1; plus `filmScript` for 2; plus the four clone prompts for 3; all eleven for 4 | 400 `Not a prompt preset file` |
 | 3 | Name and prompt rules of 2.3 | 400 as in 2.3 |
 
-- A `formatVersion` 1 file has no `filmScript` and no clone prompt, a `formatVersion` 2 file no clone prompt;
+- A file older than `formatVersion` 4 lacks the prompts its version does not list — 1 has no `filmScript`,
+  no clone prompt, no `filmOutline` and no `storyBible`; 2 and 3 have no `filmOutline` and no `storyBible`;
   the imported preset gets the code default for each missing one.
 - Name taken → `{name} (imported)`, then `(imported 2)` …, cut to fit as for duplicates.
 - Version 1, `change = imported`, `change_source` = the uploaded file name cut to 120 characters.
@@ -300,7 +344,7 @@ Multipart `file`.
 - A job without `options.prompts` uses the code defaults.
 - Job screens show `Prompt preset` as `{name} v{n}`, or `—` without `options.preset`.
 - A Film Studio episode is not a job: its creation takes the same optional `presetId` and copies `preset`
-  and the `filmScript` prompt into the episode (4.2), with the same rules.
+  and the `filmOutline`, `filmScript` and `storyBible` prompts into the episode (4.2), with the same rules.
 - A Film Clone creation also copies `preset` and the `cloneLocalization` and `cloneScript` prompts into the
   clone (5.1), with the same rules.
 
@@ -351,13 +395,13 @@ chosen when it is created.`
 ## API endpoints
 
 Same JSON and error conventions as domain 1. Prompt keys in JSON: `videoToMarkdown`,
-`characterImage`, `characterVoice`, `scene`, `filmScript`, `cloneAssets`, `cloneShots`,
-`cloneLocalization`, `cloneScript`.
+`characterImage`, `characterVoice`, `scene`, `filmOutline`, `filmScript`, `storyBible`, `cloneAssets`,
+`cloneShots`, `cloneLocalization`, `cloneScript`.
 
 ```
 GET    /prompt-presets                              — PromptPreset[] (Default first, then by name)
 POST   /prompt-presets                              — { "name" } → 201 PromptPresetDetail
-GET    /prompt-presets/defaults                     — code defaults of the nine prompts + the app-added parts (2.2)
+GET    /prompt-presets/defaults                     — code defaults of the eleven prompts + the app-added parts (2.2)
 GET    /prompt-presets/{id}                         — PromptPresetDetail
 PUT    /prompt-presets/{id}                         — { "name", "prompts" } → PromptPresetDetail
 DELETE /prompt-presets/{id}                         — 204

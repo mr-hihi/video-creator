@@ -316,7 +316,7 @@ Test cases for [business/5-film-clone.md](../business/5-film-clone.md). Acronym 
   3. Open `Localization`
 - **Expected:**
   - Dialog `Discard the localization and start again?`; after `Cancel` nothing changes
-  - After `OK`: stage bar `Localization` `waiting`, `Script & images` `upcoming`; `Script` reads `Waiting…`
+  - After `OK`: stage bar `Localization` `waiting`, `Script & images` `upcoming`; `Script` reads `Waiting for localization choices` with a button `Open Localization`
   - Step 3: `Target country` = `Japan`, `Appearance` and `Costume` ticked; the line `Images with: Google Flow` with a link `Change` → `/settings?tab=film-clone`
   - `GET C/{K2}` → `scenes` = `[]`, `scriptTitle` = `null`, every asset `changed` = `false`; `api/storage-test/film-clones/{K2}/` holds no reference or scene file
 
@@ -335,6 +335,20 @@ Test cases for [business/5-film-clone.md](../business/5-film-clone.md). Acronym 
 - **Expected:**
   - The button reads `Copied` for 2 s
   - The clipboard starts with `# {scriptTitle}`, then the logline, then one `## Scene {k} — {mm:ss}` per scene followed by its description and dialogue
+
+### TC-FC-46: Script tab while the clone waits for the user
+- **App:** Frontend
+- **Precondition:** K1; a clone R at `waiting` · `reviewing` (TC-FC-11 run to step 3).
+- **Steps:**
+  1. Navigate to `/film-clone/{K1}`; open `Script`
+  2. Click `Open Localization`
+  3. Navigate to `/film-clone/{R}`; open `Script`
+  4. Click `Open Localization`
+- **Expected:**
+  1. `Script` reads `Waiting for localization choices` with a button `Open Localization`; no `Waiting…`
+  2. The `Localization` tab is selected and shows `Target country` and the `Localize` button
+  3. `Script` reads `Waiting for your review` with `Open Localization` and `Back to localization`
+  4. The `Localization` tab is selected and shows one card per changed asset and `Write script`
 
 ## History, delete & lifecycle
 
@@ -390,31 +404,33 @@ Test cases for [business/5-film-clone.md](../business/5-film-clone.md). Acronym 
 
 ## Send to Film Studio
 
-### TC-FC-28: The `Send to Film Studio` panel
+### TC-FC-28: The `Send to Film Studio` button and dialog
 - **App:** Frontend
 - **Precondition:** K1; K2 (`scriptLanguage` = `ja`, `aspect` = `16:9`); a `done` clone L with `scriptLanguage` = `ko`;
   Film Studio project P1 active and P5 archived; `filmStudioImageProvider` and `filmStudioClipProvider` at their
   default `null`, the `image` and `video` routes at their default `google_flow`.
 - **Steps:**
   1. Navigate to `/film-clone/{K1}`
-  2. Navigate to `/film-clone/{K2}`
+  2. Navigate to `/film-clone/{K2}`; click `Send to Film Studio` in the header
   3. Untick `Narration`
   4. Select `Test Series` from `Project`
-  5. Navigate to `/film-clone/{L}`
+  5. Click `Cancel`, then click `Send to Film Studio` in the header
+  6. Navigate to `/film-clone/{L}`; click `Send to Film Studio` in the header
 - **Expected:**
-  1. No `Send to Film Studio` panel
-  2. `Project` = `New project`, list has `Test Series` and no `Old Series`; `Project name` = K2's `scriptTitle`; `Frame` = `Landscape 16:9` and `Language` = `Japanese`, both read-only; `Style` = `Photorealistic`; `Default clip length` = `8 s`; `Narration` ticked, `Narrator voice` = `—` with a link `Add a voice` → `/films/library?tab=voices`; the line `Images with: Google Flow · Clips with: Google Flow` with a link `Change` → `/settings?tab=film-studio`; `Send to Film Studio` is disabled
-  3. `Narrator voice` is disabled; *(captcha off)* `Send to Film Studio` is enabled
+  1. The header shows the status badge, `Send to Film Studio` (disabled) and `Delete`, in that order
+  2. The header shows the status badge, `Send to Film Studio` (enabled) and `Delete`, in that order; the page has no `Send to Film Studio` panel. Dialog `Send to Film Studio` opens: `Project` = `New project`, list has `Test Series` and no `Old Series`; `Project name` = K2's `scriptTitle`; `Frame` = `Landscape 16:9` and `Language` = `Japanese`, both read-only; `Style` = `Photorealistic`; `Default clip length` = `8 s`; `Narration` ticked, `Narrator voice` = `—` with a link `Add a voice` → `/films/library?tab=voices`; the line `Images with: Google Flow · Clips with: Google Flow` with a link `Change` → `/settings?tab=film-studio`; buttons `Send to Film Studio` (disabled) and `Cancel`
+  3. `Narrator voice` is disabled; *(captcha off)* the dialog's `Send to Film Studio` is enabled
   4. `Project name`, `Frame`, `Style`, `Default clip length`, `Language`, `Narration` and `Narrator voice` are hidden; the media line stays
-  5. The panel reads `Film Studio narrates only Vietnamese, English or Japanese.`; `Send to Film Studio` is disabled
+  5. The dialog closes; reopened, it shows `Project` = `New project` and `Narration` ticked
+  6. The dialog reads `Film Studio narrates only Vietnamese, English or Japanese.`; its `Send to Film Studio` is disabled
 
 ### TC-FC-29: Send to a new project
 - **App:** Frontend *(real provider)*
 - **Precondition:** K2; VT1 of [4-film-studio.md § Test environment](./4-film-studio.md#test-environment).
 - **Steps:**
   1. Navigate to `/film-clone/{K2}`
-  2. In `Send to Film Studio`, keep `New project`; fill `Project name` with `Clone Test`; select `4 s` from `Default clip length`; select `narrator-en` from `Narrator voice`
-  3. *(captcha on)* Wait for the captcha; click `Send to Film Studio`
+  2. Click `Send to Film Studio` in the header; in the dialog keep `New project`; fill `Project name` with `Clone Test`; select `4 s` from `Default clip length`; select `narrator-en` from `Narrator voice`
+  3. *(captcha on)* Wait for the captcha; click `Send to Film Studio` in the dialog
 - **Expected:**
   - URL becomes `/films/{new project id}/episodes/1`; the stage list shows `Writing script` and `Generating reference images` `completed` and `Generating scene images` `paused`, with `Paused after Generating scene images — check the work, then Continue.`; the counters read `Images {n}/{n}`, `n` = K2's scenes
   - `Scenes` shows one card per K2 scene, in order, each with K2's image; `Script` shows `Source` linking to `/film-clone/{K2}`
@@ -428,11 +444,11 @@ Test cases for [business/5-film-clone.md](../business/5-film-clone.md). Acronym 
 - **Steps:**
   1. `GET /films/projects/{P1}` and note the number of `episodes`
   2. Navigate to `/film-clone/{K2}`
-  3. In `Send to Film Studio`, select `Test Series` from `Project`
-  4. *(captcha on)* Wait for the captcha; click `Send to Film Studio`
+  3. Click `Send to Film Studio` in the header; select `Test Series` from `Project`
+  4. *(captcha on)* Wait for the captcha; click `Send to Film Studio` in the dialog
   5. `GET /films/projects/{P1}`
 - **Expected:**
-  - Step 4: alert `The clone is written in ja; the project narrates in en`; URL stays `/film-clone/{K2}`; `Project` still shows `Test Series`
+  - Step 4: alert `The clone is written in ja; the project narrates in en` in the dialog; the dialog stays open; URL stays `/film-clone/{K2}`; `Project` still shows `Test Series`
   - Step 5: the same number of `episodes` as step 1
 
 ## Claude calls

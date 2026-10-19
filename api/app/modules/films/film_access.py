@@ -5,12 +5,14 @@ from app.modules.films.errors import (
     EpisodeNotFoundError,
     EpisodeRunningError,
     FilmProjectNotFoundError,
+    PartNotFoundError,
     ProjectArchivedError,
     SceneNotFoundError,
 )
 from app.modules.films.models import (
     Character,
     Episode,
+    EpisodePart,
     EpisodeStatus,
     FilmProject,
     ProjectStatus,
@@ -23,6 +25,13 @@ from app.modules.films.repository import FilmRepository
 class EpisodeContext:
     project: FilmProject
     episode: Episode
+
+
+@dataclass(frozen=True)
+class PartContext:
+    project: FilmProject
+    episode: Episode
+    part: EpisodePart
 
 
 @dataclass(frozen=True)
@@ -66,6 +75,23 @@ class FilmAccess:
 
     def get_editable_episode(self, episode_id: str) -> EpisodeContext:
         context = self.get_writable_episode(episode_id)
+        ensure_not_running(context.episode)
+        return context
+
+    def get_part(self, part_id: str) -> PartContext:
+        part = self._repository.find_part(part_id)
+        if part is None:
+            raise PartNotFoundError(part_id)
+        context = self.get_episode(part.episode_id)
+        return PartContext(project=context.project, episode=context.episode, part=part)
+
+    def get_writable_part(self, part_id: str) -> PartContext:
+        context = self.get_part(part_id)
+        ensure_project_active(context.project)
+        return context
+
+    def get_editable_part(self, part_id: str) -> PartContext:
+        context = self.get_writable_part(part_id)
         ensure_not_running(context.episode)
         return context
 

@@ -11,6 +11,7 @@ from app.modules.films.assembly_plan import (
     SubtitleCue,
     build_assembly_plan,
     ensure_every_clip_done,
+    ensure_every_part_has_scenes,
     format_srt_time,
     is_music_used,
     is_narration_used,
@@ -19,7 +20,7 @@ from app.modules.films.assembly_plan import (
     to_srt_text,
 )
 from app.modules.films.errors import EpisodeStepFailedError
-from app.modules.films.models import Episode, FilmProject, MediaStatus, Scene
+from app.modules.films.models import Episode, EpisodePart, FilmProject, MediaStatus, Scene
 
 CLIP_8_PATH = Path("/films/clip-8.mp4")
 NAR_3 = NarrationTake(path=Path("/films/nar-3.wav"), duration_ms=3200, text="The fog rolls in.")
@@ -84,6 +85,41 @@ def pathless_clip_message():
 @pytest.fixture
 def every_clip_done_result():
     return ensure_every_clip_done([build_scene(0), build_scene(1)])
+
+
+@pytest.fixture
+def second_part_clip_message():
+    return raised_message(
+        [
+            build_scene(0, part_id="pt1"),
+            build_scene(1, part_id="pt1"),
+            build_scene(0, id="s9", part_id="pt2", clip_status=MediaStatus.FAILED),
+        ]
+    )
+
+
+def parts_check_message(parts: list[EpisodePart], scenes: list[Scene]) -> str | None:
+    try:
+        ensure_every_part_has_scenes(parts, scenes)
+    except EpisodeStepFailedError as error:
+        return str(error)
+    return None
+
+
+@pytest.fixture
+def empty_part_message():
+    return parts_check_message(
+        [EpisodePart(id="pt1", position=0), EpisodePart(id="pt2", position=1)],
+        [build_scene(0, part_id="pt1")],
+    )
+
+
+@pytest.fixture
+def filled_parts_message():
+    return parts_check_message(
+        [EpisodePart(id="pt1", position=0), EpisodePart(id="pt2", position=1)],
+        [build_scene(0, part_id="pt1"), build_scene(0, id="s9", part_id="pt2")],
+    )
 
 
 @pytest.fixture(
@@ -198,6 +234,18 @@ def test_ensure_every_clip_done_names_the_first_scene_without_a_clip(reset_clip_
 
 def test_ensure_every_clip_done_rejects_a_done_clip_without_a_file(pathless_clip_message):
     assert pathless_clip_message == "Scene 1 has no clip"
+
+
+def test_ensure_every_clip_done_counts_scenes_across_parts(second_part_clip_message):
+    assert second_part_clip_message == "Scene 3 has no clip"
+
+
+def test_ensure_every_part_has_scenes_names_the_empty_part(empty_part_message):
+    assert empty_part_message == "Part 2 has no scenes"
+
+
+def test_ensure_every_part_has_scenes_accepts_parts_with_scenes(filled_parts_message):
+    assert filled_parts_message is None
 
 
 def test_ensure_every_clip_done_accepts_scenes_with_clips(every_clip_done_result):

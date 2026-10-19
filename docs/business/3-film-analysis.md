@@ -194,8 +194,8 @@ Header menu as in 1.7.
 
 ### `/film-analysis/{id}` — Analysis detail
 
-- Header: `source_filename`, status badge, `Delete` (only `done` / `failed`; afterwards →
-  `/film-analysis`).
+- Header: `source_filename`, status badge, `Send to Film Studio` (enabled only when `done`), `Delete` (only
+  `done` / `failed`; afterwards → `/film-analysis`).
 - Summary: `Language`, `Prompt preset` (`{name} v{n}`), `AI`, `Input` (8.4), `Frames` (`{dialogue}
   dialogue + {scene} scene changes`, `—` until `capturing_frames` ends), `Created`, `Started`,
   `Finished`. YouTube adds `Source`
@@ -210,25 +210,28 @@ Header menu as in 1.7.
 - Panel "Prompts used", collapsed: each prompt in `options.prompts`, read-only, with `Copy`.
 - Panel "Rerun with another preset", only when 3.4 rules 3–4 pass: `Prompt preset` select (default
   preselected), the `AI` line of 8.4, captcha, `Rerun` → `/film-analysis/{new id}`.
-- Panel "Make a film", only when the job is `done` — turns the analysis into a Film Studio episode (4.2,
-  source `film_analysis`):
+- Dialog "Send to Film Studio", opened by the header button — turns the analysis into a Film Studio episode
+  (4.2, source `film_analysis`):
 
 | Element | Detail |
 |---|---|
 | `Project` | `New project` (default), then every active Film Studio project by name |
 | `Project name` | `New project` only; text, prefilled with the `{stem}` of `source_filename` (1.6) cut to 100 characters |
 | `Frame`, `Style`, `Language` | `New project` only; as the `New project` panel of 4.5, `Language` preselecting `options.language` when it is not `auto` |
-| `Target length` | seconds, 8–600, default 60 |
+| `Target length` | seconds, 8 or more, default 60 |
 | `Extra direction` | optional text area |
 | `AI` line | as 8.4 — the model that writes the script |
 | Media line | as the `New project` panel of 4.5 |
-| Button | `Make a film`, with a captcha (when the captcha is on) |
+| Buttons | `Send to Film Studio`, with a captcha (when the captcha is on), and `Cancel` |
 
-- `Make a film` creates the project first when `New project` is chosen (4.1), then the episode, then starts
-  it, and opens `/films/{project id}/episodes/{number}`. A project created before a refused episode stays.
-- A project created here has narration off: the panel offers no narrator voice, and `start` refuses
+- `Send to Film Studio` creates the project first when `New project` is chosen (4.1), then the episode, then
+  starts it, and opens `/films/{project id}/episodes/{number}`. A project created before a refused episode
+  stays.
+- A project created here has narration off: the dialog offers no narrator voice, and `start` refuses
   narration without one (4.2). The user turns narration on in the project's `Settings` panel.
-  An error shows an alert with the API `detail` and keeps the inputs.
+  An error shows an alert in the dialog with the API `detail`; the dialog stays open and keeps the inputs.
+- `Cancel` or `Esc` closes the dialog and drops the inputs; the next opening starts from the defaults. Neither
+  closes it while the request runs.
 - Refreshes every 3 s while `pending` / `processing`.
 - Unknown id, or a job of another type → `Analysis not found` with a link to `/film-analysis`.
 

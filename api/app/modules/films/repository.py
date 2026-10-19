@@ -5,12 +5,14 @@ from typing import Any
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.db import utc_now
 from app.modules.ai_models.ai_calls import AiModelChoice
 from app.modules.ai_models.model_choices import to_model_value
 from app.modules.films.models import (
     Character,
     EntityType,
     Episode,
+    EpisodePart,
     EpisodeStatus,
     EpisodeStep,
     FilmProject,
@@ -28,8 +30,14 @@ from app.modules.media_generation.models import (
 
 
 @dataclass(frozen=True)
-class ScriptSave:
+class OutlineSave:
     episode_values: Mapping[str, Any]
+    parts: Sequence[EpisodePart]
+
+
+@dataclass(frozen=True)
+class ScriptSave:
+    recap: str | None
     new_characters: Sequence[Character] = ()
     linked_character_ids: Sequence[str] = ()
     character_values_by_id: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
@@ -37,10 +45,17 @@ class ScriptSave:
 
 
 @dataclass(frozen=True)
+class StoryBibleSave:
+    summary: str | None
+    story_bible: str
+
+
+@dataclass(frozen=True)
 class EpisodeCreation:
     episode: Episode
     new_characters: Sequence[Character] = ()
     linked_character_ids: Sequence[str] = ()
+    parts: Sequence[EpisodePart] = ()
     scenes: Sequence[Scene] = ()
 
 
@@ -93,6 +108,7 @@ class FilmRepository:
             )
             episode_ids = select(Episode.id).where(Episode.project_id == project_id)
             session.execute(delete(Scene).where(Scene.episode_id.in_(episode_ids)))
+            session.execute(delete(EpisodePart).where(EpisodePart.episode_id.in_(episode_ids)))
             session.execute(delete(Episode).where(Episode.project_id == project_id))
             session.execute(
                 delete(FilmProjectCharacter).where(FilmProjectCharacter.project_id == project_id)
@@ -326,6 +342,9 @@ class FilmRepository:
                     )
             session.add(episode)
             session.flush()
+            for part in creation.parts:
+                session.add(part)
+            session.flush()
             for scene in creation.scenes:
                 session.add(scene)
         return episode
@@ -383,16 +402,34 @@ class FilmRepository:
                 delete(GenerationRequest).where(GenerationRequest.episode_id == episode_id)
             )
             session.execute(delete(Scene).where(Scene.episode_id == episode_id))
+            session.execute(delete(EpisodePart).where(EpisodePart.episode_id == episode_id))
             session.execute(delete(Episode).where(Episode.id == episode_id))
 
-    def save_script(self, episode_id: str, script: ScriptSave) -> bool:
+    def save_outline(self, episode_id: str, outline: OutlineSave) -> bool:
         with self._session_factory.begin() as session:
             episode = session.get(Episode, episode_id, with_for_update=True)
-            if episode is None or not _is_writing_script(episode):
+            if episode is None or not _is_running_at(episode, EpisodeStep.WRITING_OUTLINE):
                 return False
-            has_scenes = session.scalar(
-                select(Scene.id).where(Scene.episode_id == episode_id).limit(1)
+            has_parts = session.scalar(
+                select(EpisodePart.id).where(EpisodePart.episode_id == episode_id).limit(1)
             )
+            if has_parts is not None:
+                return False
+            for part in outline.parts:
+                session.add(part)
+            session.execute(
+                update(Episode).where(Episode.id == episode_id).values(**outline.episode_values)
+            )
+            return True
+
+    def save_part_script(self, part: EpisodePart, script: ScriptSave) -> bool:
+        with self._session_factory.begin() as session:
+            episode = session.get(Episode, part.episode_id, with_for_update=True)
+            if episode is None or not _is_running_at(episode, EpisodeStep.WRITING_SCRIPT):
+                return False
+            if session.get(EpisodePart, part.id) is None:
+                return False
+            has_scenes = session.scalar(select(Scene.id).where(Scene.part_id == part.id).limit(1))
             if has_scenes is not None:
                 return False
             for character in script.new_characters:
@@ -412,14 +449,135 @@ class FilmRepository:
             for scene in script.scenes:
                 session.add(scene)
             session.execute(
-                update(Episode).where(Episode.id == episode_id).values(**script.episode_values)
+                update(EpisodePart).where(EpisodePart.id == part.id).values(recap=script.recap)
             )
             return True
 
+    def save_story_bible(self, episode_id: str, story: StoryBibleSave) -> bool:
+        with self._session_factory.begin() as session:
+            episode = session.get(Episode, episode_id, with_for_update=True)
+            if episode is None or not _is_running_at(episode, EpisodeStep.UPDATING_STORY_BIBLE):
+                return False
+            episode.summary = story.summary
+            session.execute(
+                update(FilmProject)
+                .where(FilmProject.id == episode.project_id)
+                .values(
+                    story_bible=story.story_bible,
+                    story_bible_episode_id=episode_id,
+                    story_bible_updated_at=utc_now(),
+                )
+            )
+            return True
+
+    def find_parts(self, episode_id: str) -> list[EpisodePart]:
+        with self._session_factory() as session:
+            statement = (
+                select(EpisodePart)
+                .where(EpisodePart.episode_id == episode_id)
+                .order_by(EpisodePart.position)
+            )
+            return list(session.scalars(statement))
+
+    def find_part(self, part_id: str) -> EpisodePart | None:
+        with self._session_factory() as session:
+            return session.get(EpisodePart, part_id)
+
+    def insert_part(self, part: EpisodePart) -> EpisodePart:
+        with self._session_factory.begin() as session:
+            session.execute(
+                update(EpisodePart)
+                .where(
+                    EpisodePart.episode_id == part.episode_id,
+                    EpisodePart.position >= part.position,
+                )
+                .values(position=EpisodePart.position + 1)
+            )
+            session.add(part)
+        return part
+
+    def update_part(self, part_id: str, values: Mapping[str, Any]) -> None:
+        with self._session_factory.begin() as session:
+            session.execute(update(EpisodePart).where(EpisodePart.id == part_id).values(**values))
+
+    def move_part(self, part: EpisodePart, new_position: int) -> None:
+        with self._session_factory.begin() as session:
+            _shift_positions(
+                session,
+                EpisodePart,
+                EpisodePart.episode_id == part.episode_id,
+                (part.position, new_position),
+            )
+            session.execute(
+                update(EpisodePart).where(EpisodePart.id == part.id).values(position=new_position)
+            )
+
+    def delete_part(self, part: EpisodePart) -> None:
+        with self._session_factory.begin() as session:
+            session.execute(delete(EpisodePart).where(EpisodePart.id == part.id))
+            session.execute(
+                update(EpisodePart)
+                .where(
+                    EpisodePart.episode_id == part.episode_id,
+                    EpisodePart.position > part.position,
+                )
+                .values(position=EpisodePart.position - 1)
+            )
+
+    def delete_script(self, episode_id: str) -> None:
+        with self._session_factory.begin() as session:
+            scene_ids = select(Scene.id).where(Scene.episode_id == episode_id)
+            session.execute(
+                delete(GenerationRequest).where(GenerationRequest.scene_id.in_(scene_ids))
+            )
+            session.execute(delete(Scene).where(Scene.episode_id == episode_id))
+            session.execute(delete(EpisodePart).where(EpisodePart.episode_id == episode_id))
+
+    def clear_part_script(self, part_id: str) -> None:
+        with self._session_factory.begin() as session:
+            scene_ids = select(Scene.id).where(Scene.part_id == part_id)
+            session.execute(
+                delete(GenerationRequest).where(GenerationRequest.scene_id.in_(scene_ids))
+            )
+            session.execute(delete(Scene).where(Scene.part_id == part_id))
+            session.execute(update(EpisodePart).where(EpisodePart.id == part_id).values(recap=None))
+
     def find_scenes(self, episode_id: str) -> list[Scene]:
         with self._session_factory() as session:
-            statement = select(Scene).where(Scene.episode_id == episode_id).order_by(Scene.position)
+            statement = (
+                select(Scene)
+                .join(EpisodePart, EpisodePart.id == Scene.part_id)
+                .where(Scene.episode_id == episode_id)
+                .order_by(EpisodePart.position, Scene.position)
+            )
             return list(session.scalars(statement))
+
+    def find_part_scenes(self, part_id: str) -> list[Scene]:
+        with self._session_factory() as session:
+            statement = select(Scene).where(Scene.part_id == part_id).order_by(Scene.position)
+            return list(session.scalars(statement))
+
+    def count_scenes_by_part(self, part_ids: Collection[str]) -> dict[str, int]:
+        with self._session_factory() as session:
+            rows = session.execute(
+                select(Scene.part_id, func.count())
+                .where(Scene.part_id.in_(part_ids))
+                .group_by(Scene.part_id)
+            )
+            return {part_id: count for part_id, count in rows}
+
+    def count_scenes_before_part(self, part: EpisodePart) -> int:
+        with self._session_factory() as session:
+            count = session.scalar(
+                select(func.count())
+                .select_from(Scene)
+                .join(EpisodePart, EpisodePart.id == Scene.part_id)
+                .where(
+                    EpisodePart.episode_id == part.episode_id,
+                    EpisodePart.position < part.position,
+                )
+            )
+            return count or 0
 
     def count_scenes_by_episode(self, episode_ids: Collection[str]) -> dict[str, int]:
         with self._session_factory() as session:
@@ -442,7 +600,7 @@ class FilmRepository:
         with self._session_factory.begin() as session:
             session.execute(
                 update(Scene)
-                .where(Scene.episode_id == scene.episode_id, Scene.position >= scene.position)
+                .where(Scene.part_id == scene.part_id, Scene.position >= scene.position)
                 .values(position=Scene.position + 1)
             )
             session.add(scene)
@@ -450,26 +608,9 @@ class FilmRepository:
 
     def move_scene(self, scene: Scene, new_position: int) -> None:
         with self._session_factory.begin() as session:
-            if new_position < scene.position:
-                session.execute(
-                    update(Scene)
-                    .where(
-                        Scene.episode_id == scene.episode_id,
-                        Scene.position >= new_position,
-                        Scene.position < scene.position,
-                    )
-                    .values(position=Scene.position + 1)
-                )
-            else:
-                session.execute(
-                    update(Scene)
-                    .where(
-                        Scene.episode_id == scene.episode_id,
-                        Scene.position > scene.position,
-                        Scene.position <= new_position,
-                    )
-                    .values(position=Scene.position - 1)
-                )
+            _shift_positions(
+                session, Scene, Scene.part_id == scene.part_id, (scene.position, new_position)
+            )
             session.execute(update(Scene).where(Scene.id == scene.id).values(position=new_position))
 
     def delete_scene(self, scene: Scene) -> None:
@@ -478,17 +619,9 @@ class FilmRepository:
             session.execute(delete(Scene).where(Scene.id == scene.id))
             session.execute(
                 update(Scene)
-                .where(Scene.episode_id == scene.episode_id, Scene.position > scene.position)
+                .where(Scene.part_id == scene.part_id, Scene.position > scene.position)
                 .values(position=Scene.position - 1)
             )
-
-    def delete_scenes(self, episode_id: str) -> None:
-        with self._session_factory.begin() as session:
-            scene_ids = select(Scene.id).where(Scene.episode_id == episode_id)
-            session.execute(
-                delete(GenerationRequest).where(GenerationRequest.scene_id.in_(scene_ids))
-            )
-            session.execute(delete(Scene).where(Scene.episode_id == episode_id))
 
     def find_open_requests_for_project(self, project_id: str) -> list[GenerationRequest]:
         return self._find_open_requests(GenerationRequest.project_id == project_id)
@@ -534,5 +667,23 @@ class FilmRepository:
             return list(session.scalars(statement))
 
 
-def _is_writing_script(episode: Episode) -> bool:
-    return episode.status is EpisodeStatus.RUNNING and episode.step is EpisodeStep.WRITING_SCRIPT
+def _is_running_at(episode: Episode, step: EpisodeStep) -> bool:
+    return episode.status is EpisodeStatus.RUNNING and episode.step is step
+
+
+def _shift_positions(
+    session: Session, model: type[Scene] | type[EpisodePart], scope: Any, move: tuple[int, int]
+) -> None:
+    old_position, new_position = move
+    if new_position < old_position:
+        session.execute(
+            update(model)
+            .where(scope, model.position >= new_position, model.position < old_position)
+            .values(position=model.position + 1)
+        )
+        return
+    session.execute(
+        update(model)
+        .where(scope, model.position > old_position, model.position <= new_position)
+        .values(position=model.position - 1)
+    )

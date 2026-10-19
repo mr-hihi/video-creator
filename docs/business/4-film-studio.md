@@ -3,29 +3,33 @@
 > One file = one domain. Every section below belongs to the **Film Studio** domain. The domain is
 > split into sub-domain files under [4-film-studio/](./4-film-studio/); this file is the overview.
 
-Makes AI films as series. A **project** is a series with one look (orientation, style) and a cast taken
-from a shared **character library**; each **episode** is one film. For an episode, the AI model (domain 8)
-writes the script — scenes with an image prompt, a clip prompt and narration — from an idea or from a
-finished Film Analysis (domain 3). The app then generates a reference image per character, a still image per scene, an
-image-to-video clip per scene, narration and music, and assembles the episode into an MP4 with subtitles.
-An episode can also start from a finished Film Clone (domain 5), whose scenes and images it copies.
+Makes AI films as series. A **project** is a series with one look (orientation, style), a cast taken
+from a shared **character library** and a **story bible**; each **episode** is one film of any length. For
+an episode, the AI model (domain 8) writes an outline of **parts**, then the script of each part — scenes
+with an image prompt, a clip prompt and narration — from an idea or from a finished Film Analysis
+(domain 3), and then rewrites the story bible and the episode's summary so later episodes keep the story
+going. The app then generates a reference image per character, a still image per scene, an image-to-video
+clip per scene, narration and music, and assembles the episode into one MP4 with subtitles, downloaded on
+its own. An episode can also start from a finished Film Clone (domain 5), whose scenes and images it copies.
 It runs on its own, stopping at the points the user chose so they can check the work before more credit
 is spent. The pipeline is ported from flowkit (MIT, © 2026 tuannguyenhoangit-droid).
 
 ```
-Character (library) ◀──N:N──▶ FilmProject (series: orientation, style, default clip length)
-                                   └─1:N─▶ Episode (one film: script, stop points, MP4 + .srt)
-                                              └─1:N─▶ Scene (image · clip of 4–30 s · narration)
+Character (library) ◀──N:N──▶ FilmProject (series: orientation, style, default clip length, story bible)
+                                   └─1:N─▶ Episode (one film: outline, summary, stop points, MP4 + .srt)
+                                              └─1:N─▶ EpisodePart (plan · 8–600 s · recap · up to 80 scenes)
+                                                         └─1:N─▶ Scene (image · clip of 4–30 s · narration)
 GenerationRequest — one image, clip, narration, music track or thumbnail asked of a provider
 ```
 
 - Persona: the same single local user as domain 1. Captcha on episode creation only, switched off as in
   domain 1.
 - Entities: `FilmProject`, `Character`, `FilmProjectCharacter`, `Style`, `VoiceTemplate`, `Episode`,
-  `Scene`, `GenerationRequest` — tables listed in each sub-domain. Film Studio does not use the `jobs`
-  table or its worker.
-- Prompt: the `filmScript` prompt of a prompt preset (domain 2), copied into the episode at creation; the
-  AI model of the `filmScript` step group, read when the call starts (8.1).
+  `EpisodePart`, `Scene`, `GenerationRequest` — tables listed in each sub-domain. Film Studio does not use
+  the `jobs` table or its worker.
+- Prompts: the `filmOutline`, `filmScript` and `storyBible` prompts of a prompt preset (domain 2), copied
+  into the episode at creation; the AI model of the `filmScript` step group, read when each call starts
+  (8.1).
 - External tools: `ffmpeg` / `ffprobe`, the `claude` CLI, the Gemini API or the OpenAI API (8.2), `whisper-cli` (voice sample
   text), and the media providers below.
 
@@ -52,11 +56,11 @@ Film Studio asks a provider for one of five media kinds; Film Clone (domain 5) a
 
 | # | Sub-domain | Contents |
 |---|---|---|
-| 4.1 | [Projects & library](./4-film-studio/4.1-projects-and-library.md) | `FilmProject`, the character library, styles, voice templates, link and delete rules |
-| 4.2 | [Episodes & script](./4-film-studio/4.2-episodes-and-script.md) | `Episode`, sources (idea / film analysis / film clone), status workflow, stop points, `writing_script` |
+| 4.1 | [Projects & library](./4-film-studio/4.1-projects-and-library.md) | `FilmProject` with its story bible, the character library, styles, voice templates, link and delete rules |
+| 4.2 | [Episodes & script](./4-film-studio/4.2-episodes-and-script.md) | `Episode`, `EpisodePart`, sources (idea / film analysis / film clone), status workflow, stop points, part edits, `writing_outline`, `writing_script` per part, `updating_story_bible` |
 | 4.3 | [Scenes & generation](./4-film-studio/4.3-scenes-and-generation.md) | `Scene`, `GenerationRequest`, worker, retries, prompts sent, dependency and reset rules, manual edits |
 | 4.4 | [Audio & assembly](./4-film-studio/4.4-audio-and-assembly.md) | narration, music, assembling the MP4, subtitles, thumbnails |
-| 4.5 | [Screens](./4-film-studio/4.5-screens.md) | `/films`, project detail, episode workspace, `/films/library` |
+| 4.5 | [Screens](./4-film-studio/4.5-screens.md) | `/films`, project detail with the `Story bible` tab and the episode popup, episode workspace with the outline, `/films/library` |
 
 ---
 
@@ -70,7 +74,7 @@ Same JSON and error conventions as domain 1. Generation routes answer `202` with
 GET    /films/projects?status=active|archived              — FilmProject[] newest first (default active)
 POST   /films/projects                                     — 201 FilmProjectDetail (4.1)
 GET    /films/projects/{id}                                — FilmProjectDetail = FilmProject + characters + episodes + open requests of its characters
-PATCH  /films/projects/{id}                                — settings (4.1) → FilmProjectDetail
+PATCH  /films/projects/{id}                                — settings and `storyBible` (4.1) → FilmProjectDetail
 POST   /films/projects/{id}/archive                        — FilmProject
 POST   /films/projects/{id}/unarchive                      — FilmProject
 DELETE /films/projects/{id}                                — 204
@@ -99,7 +103,7 @@ POST   /films/voices/{id}/consent                          — multipart `file` 
 DELETE /films/voices/{id}/consent                          — 204
 
 POST   /films/projects/{id}/episodes                       — 201 Episode (4.2)
-GET    /films/episodes/{id}                                — EpisodeDetail = Episode + scenes + open requests
+GET    /films/episodes/{id}                                — EpisodeDetail = Episode + parts with counters + open requests not tied to a scene (4.2)
 PATCH  /films/episodes/{id}                                — editable fields (4.2) → Episode
 DELETE /films/episodes/{id}                                — 204
 POST   /films/episodes/{id}/start | continue | stop | resume — Episode (4.2)
@@ -108,7 +112,13 @@ POST   /films/episodes/{id}/assemble                       — Episode (4.4)
 POST   /films/episodes/{id}/thumbnails                     — 202 GenerationRequest[] (4.4)
 POST   /films/episodes/{id}/thumbnail                      — { "candidate": 1-4 } → Episode
 
-POST   /films/episodes/{id}/scenes                         — { "afterPosition"?, … } → 201 Scene (4.3)
+POST   /films/episodes/{id}/parts                          — { "afterPosition"?, "title", "plan", "targetDurationS" } → 201 EpisodePart (4.2)
+GET    /films/parts/{id}                                   — PartDetail = EpisodePart + scenes + open requests of its scenes
+PATCH  /films/parts/{id}                                   — title, plan, targetDurationS, position → EpisodePart
+DELETE /films/parts/{id}                                   — 204
+POST   /films/parts/{id}/rewrite                           — Episode (4.2)
+
+POST   /films/episodes/{id}/scenes                         — { "partId", "afterPosition"?, … } → 201 Scene (4.3)
 PATCH  /films/scenes/{id}                                  — prompts, narration, characters, position, trim
 DELETE /films/scenes/{id}                                  — 204
 POST   /films/scenes/{id}/image                            — multipart `file` (upload) → Scene
@@ -128,8 +138,8 @@ Errors per route are listed in the sub-domain that owns the rule.
 |---|---|---|
 | `FILM_WORKER_POLL_INTERVAL_SEC` | `5` | 4.3 |
 | `FILM_REQUEST_MAX_ATTEMPTS` | `5` | 4.3 |
-| `FILM_SCRIPT_TIMEOUT_SEC` | `600` | 4.2 — every provider |
-| `FILM_ASSEMBLY_TIMEOUT_SEC` | `3600` | 4.4 |
+| `FILM_SCRIPT_TIMEOUT_SEC` | `600` | 4.2 — each outline, part and story bible call, every provider |
+| `FILM_ASSEMBLY_TIMEOUT_SEC` | `3600` | 4.4 — each `ffmpeg` command of an assembly |
 | `FILM_MUSIC_VOLUME` | `0.2` | 4.4 |
 | `FILM_UPLOAD_MAX_MB` | `20` | 4.1, 4.3 |
 

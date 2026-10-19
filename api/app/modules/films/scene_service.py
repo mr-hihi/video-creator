@@ -3,7 +3,6 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 
-from app.modules.films.episode_rules import MAX_SCENES
 from app.modules.films.errors import FilmConflictError, InvalidFilmRequestError, SceneNotFoundError
 from app.modules.films.field_rules import to_bounded_text
 from app.modules.films.film_access import FilmAccess, SceneContext
@@ -18,11 +17,11 @@ from app.modules.films.models import (
     SceneImageSource,
     VoiceTemplate,
 )
+from app.modules.films.part_rules import MAX_PART_SCENES, TOO_MANY_PART_SCENES_MESSAGE
 from app.modules.films.project_service import EDIT_PROMPT_LIMIT, EDIT_PROMPT_MESSAGE
 from app.modules.films.repository import FilmRepository
 from app.modules.films.scene_resets import DEFAULT_TRIM_START_MS, NARRATION_RESET, NEW_IMAGE_RESET
 from app.modules.films.scene_rules import (
-    TOO_MANY_SCENES_MESSAGE,
     TrimRange,
     ensure_valid_trim,
     to_insert_position,
@@ -48,6 +47,7 @@ NO_IMAGE_YET_MESSAGE = "Scene {number} has no image yet"
 NO_IMAGE_TO_EDIT_MESSAGE = "Scene {number} has no image to edit"
 NO_NARRATION_TEXT_MESSAGE = "Scene {number} has no narration text"
 NO_CLIP_YET_MESSAGE = "Scene {number} has no clip yet"
+PART_NOT_IN_EPISODE_MESSAGE = "Part {part_id} is not in this episode"
 NAME_SEPARATOR = ", "
 TRIM_FIELDS = ("trim_start_ms", "trim_end_ms")
 UPLOADED_IMAGE_VALUES = {
@@ -61,6 +61,7 @@ UPLOADED_IMAGE_VALUES = {
 
 @dataclass(frozen=True)
 class SceneDraft:
+    part_id: str
     after_position: int | None
     image_prompt: str
     video_prompt: str
@@ -77,10 +78,6 @@ class SceneServiceTools:
     media_queue: FilmMediaQueue
 
 
-def to_scene_number(scene: Scene) -> int:
-    return scene.position + 1
-
-
 def to_order_context(context: SceneContext) -> SceneOrderContext:
     return SceneOrderContext(context.project, context.episode.id, context.scene)
 
@@ -91,12 +88,16 @@ class SceneService:
 
     def add_scene(self, episode_id: str, draft: SceneDraft) -> Scene:
         context = self._tools.access.get_editable_episode(episode_id)
-        scene_count = self._count_scenes(episode_id)
-        if scene_count >= MAX_SCENES:
-            raise InvalidFilmRequestError(TOO_MANY_SCENES_MESSAGE)
+        part = self._tools.repository.find_part(draft.part_id)
+        if part is None or part.episode_id != episode_id:
+            raise InvalidFilmRequestError(PART_NOT_IN_EPISODE_MESSAGE.format(part_id=draft.part_id))
+        scene_count = self._count_scenes(part.id)
+        if scene_count >= MAX_PART_SCENES:
+            raise InvalidFilmRequestError(TOO_MANY_PART_SCENES_MESSAGE)
         scene = Scene(
             id=str(uuid4()),
             episode_id=episode_id,
+            part_id=part.id,
             position=to_insert_position(draft.after_position, scene_count),
             image_prompt=to_valid_image_prompt(draft.image_prompt),
             video_prompt=to_valid_video_prompt(draft.video_prompt),
@@ -119,6 +120,7 @@ class SceneService:
 
     def update_scene(self, scene_id: str, changes: Mapping[str, Any]) -> Scene:
         context = self._tools.access.get_editable_scene(scene_id)
+        self._ensure_trimmable(context.scene, changes)
         values = {
             **self._to_scene_values(context, changes),
             **to_narration_values(context.scene, changes),
@@ -181,7 +183,7 @@ class SceneService:
         edit_prompt = to_bounded_text(prompt, EDIT_PROMPT_LIMIT, EDIT_PROMPT_MESSAGE)
         if context.scene.image_status is not MediaStatus.DONE:
             raise FilmConflictError(
-                NO_IMAGE_TO_EDIT_MESSAGE.format(number=to_scene_number(context.scene))
+                NO_IMAGE_TO_EDIT_MESSAGE.format(number=self._to_scene_number(context.scene))
             )
         return self._tools.media_queue.queue_scene_edit(to_order_context(context), edit_prompt)
 
@@ -189,7 +191,7 @@ class SceneService:
         context = self._get_idle_scene(scene_id)
         if context.scene.image_status is not MediaStatus.DONE:
             raise FilmConflictError(
-                NO_IMAGE_YET_MESSAGE.format(number=to_scene_number(context.scene))
+                NO_IMAGE_YET_MESSAGE.format(number=self._to_scene_number(context.scene))
             )
         return self._tools.media_queue.queue_scene_clip(to_order_context(context))
 
@@ -197,7 +199,7 @@ class SceneService:
         context = self._get_idle_scene(scene_id)
         if not (context.scene.narrator_text or "").strip():
             raise FilmConflictError(
-                NO_NARRATION_TEXT_MESSAGE.format(number=to_scene_number(context.scene))
+                NO_NARRATION_TEXT_MESSAGE.format(number=self._to_scene_number(context.scene))
             )
         voice = self._get_narrator_voice(context.project)
         return self._tools.media_queue.queue_narration(to_order_context(context), voice)
@@ -206,7 +208,7 @@ class SceneService:
         context = self._tools.access.get_editable_scene(scene_id)
         if self._tools.repository.find_open_requests_for_scene(scene_id):
             raise FilmConflictError(
-                SCENE_GENERATION_RUNNING_MESSAGE.format(number=to_scene_number(context.scene))
+                SCENE_GENERATION_RUNNING_MESSAGE.format(number=self._to_scene_number(context.scene))
             )
         return context
 
@@ -244,7 +246,7 @@ class SceneService:
         position = changes.get("position")
         if position is None:
             return None
-        valid_position = to_valid_position(position, self._count_scenes(context.episode.id))
+        valid_position = to_valid_position(position, self._count_scenes(context.scene.part_id))
         return None if valid_position == context.scene.position else valid_position
 
     def _to_cast_ids(self, project: FilmProject, character_ids: Sequence[str]) -> list[str]:
@@ -255,8 +257,18 @@ class SceneService:
         ]
         return to_valid_character_ids(character_ids, linked_ids)
 
-    def _count_scenes(self, episode_id: str) -> int:
-        return self._tools.repository.count_scenes_by_episode([episode_id]).get(episode_id, 0)
+    def _count_scenes(self, part_id: str) -> int:
+        return self._tools.repository.count_scenes_by_part([part_id]).get(part_id, 0)
+
+    def _to_scene_number(self, scene: Scene) -> int:
+        part = self._tools.repository.find_part(scene.part_id)
+        earlier_count = 0 if part is None else self._tools.repository.count_scenes_before_part(part)
+        return earlier_count + scene.position + 1
+
+    def _ensure_trimmable(self, scene: Scene, changes: Mapping[str, Any]) -> None:
+        is_trim_change = any(field in changes for field in TRIM_FIELDS)
+        if is_trim_change and scene.clip_status is not MediaStatus.DONE:
+            raise FilmConflictError(NO_CLIP_YET_MESSAGE.format(number=self._to_scene_number(scene)))
 
     def _flag_assembly(self, episode: Episode) -> None:
         if episode.status is EpisodeStatus.DONE:
@@ -281,8 +293,6 @@ def to_narration_values(scene: Scene, changes: Mapping[str, Any]) -> dict[str, A
 def to_trim_values(scene: Scene, changes: Mapping[str, Any]) -> dict[str, Any]:
     if not any(field in changes for field in TRIM_FIELDS):
         return {}
-    if scene.clip_status is not MediaStatus.DONE:
-        raise FilmConflictError(NO_CLIP_YET_MESSAGE.format(number=to_scene_number(scene)))
     start_ms = changes.get("trim_start_ms", scene.trim_start_ms)
     trim = TrimRange(
         start_ms=DEFAULT_TRIM_START_MS if start_ms is None else start_ms,

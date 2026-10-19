@@ -2,12 +2,13 @@
 
 import { useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/atoms/Button";
 import { ErrorAlert } from "@/components/atoms/ErrorAlert";
 import { InfoNotice } from "@/components/atoms/InfoNotice";
+import { ModalDialog } from "@/components/atoms/ModalDialog";
 import { Captcha, type CaptchaHandle } from "@/components/molecules/Captcha";
 import { FilmNarrationFields } from "@/components/molecules/FilmNarrationFields";
 import { SelectField } from "@/components/molecules/SelectField";
+import { SendToFilmStudioButtons } from "@/components/molecules/SendToFilmStudioButtons";
 import { TextField } from "@/components/molecules/TextField";
 import type { FilmCloneDetail } from "@/features/filmClones/types";
 import { aspectToFrameOrientation, labelsToSelectOptions } from "@/features/filmClones/utils";
@@ -48,30 +49,34 @@ import { FilmStudioMediaLine } from "./FilmStudioMediaLine";
 const FILM_LANGUAGE_OPTIONS = labelsToSelectOptions(FILM_LANGUAGE_LABELS);
 const ORIENTATION_OPTIONS = labelsToSelectOptions(ORIENTATION_LABELS);
 
-interface SendToFilmStudioFormProps {
+interface SendCloneToFilmStudioFormProps {
   clone: FilmCloneDetail;
+  onClose: () => void;
 }
 
-export function SendToFilmStudioForm({ clone }: SendToFilmStudioFormProps) {
+export function SendCloneToFilmStudioForm({ clone, onClose }: SendCloneToFilmStudioFormProps) {
   const filmLanguage = toFilmLanguage(clone.scriptLanguage);
 
   if (filmLanguage === null) {
     return (
-      <div className="flex flex-col gap-5">
-        <InfoNotice>{FILM_STUDIO_LANGUAGE_NOTICE}</InfoNotice>
-        <Button disabled>{SEND_TO_FILM_STUDIO_LABEL}</Button>
-      </div>
+      <ModalDialog title={SEND_TO_FILM_STUDIO_LABEL} isClosable onClose={onClose}>
+        <div className="flex flex-col gap-5">
+          <InfoNotice>{FILM_STUDIO_LANGUAGE_NOTICE}</InfoNotice>
+          <SendToFilmStudioButtons canSubmit={false} isBusy={false} onCancel={onClose} />
+        </div>
+      </ModalDialog>
     );
   }
-  return <CloneSendForm clone={clone} filmLanguage={filmLanguage} />;
+  return <CloneSendForm clone={clone} filmLanguage={filmLanguage} onClose={onClose} />;
 }
 
 interface CloneSendFormProps {
   clone: FilmCloneDetail;
   filmLanguage: FilmLanguage;
+  onClose: () => void;
 }
 
-function CloneSendForm({ clone, filmLanguage }: CloneSendFormProps) {
+function CloneSendForm({ clone, filmLanguage, onClose }: CloneSendFormProps) {
   const router = useRouter();
   const projectsQuery = useFilmProjectsQuery(ACTIVE_PROJECT_STATUS);
   const stylesQuery = useFilmStylesQuery();
@@ -143,66 +148,66 @@ function CloneSendForm({ clone, filmLanguage }: CloneSendFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-      <SelectField<string>
-        label="Project"
-        value={selectedProjectId}
-        options={projectOptions}
-        isDisabled={isBusy}
-        onChange={setSelectedProjectId}
-      />
-      {isNewProject && (
-        <>
-          <TextField
-            label="Project name"
-            value={draft.name}
-            isDisabled={isBusy}
-            onChange={(name) => updateDraft({ name })}
-          />
-          <SelectField<FilmLanguage>
-            label="Language"
-            value={draft.language}
-            options={FILM_LANGUAGE_OPTIONS}
-            isDisabled
-            onChange={(language) => updateDraft({ language })}
-          />
-          <SelectField<Orientation>
-            label="Frame"
-            value={draft.orientation}
-            options={ORIENTATION_OPTIONS}
-            isDisabled
-            onChange={(orientation) => updateDraft({ orientation })}
-          />
-          <SelectField<string>
-            label="Style"
-            value={draft.styleId}
-            options={stylesToOptions(stylesQuery.data, draft.styleId)}
-            isDisabled={isBusy}
-            onChange={(styleId) => updateDraft({ styleId })}
-          />
-          <SelectField<string>
-            label="Default clip length"
-            value={draft.clipDurationS}
-            options={CLIP_DURATION_OPTIONS}
-            hint={DEFAULT_CLIP_LENGTH_HINT}
-            isDisabled={isBusy}
-            onChange={(clipDurationS) => updateDraft({ clipDurationS })}
-          />
-          <FilmNarrationFields
-            settings={draft}
-            voiceOptions={voicesToOptions(voicesQuery.data)}
-            isDisabled={isBusy}
-            onChange={updateDraft}
-          />
-        </>
-      )}
-      <FilmStudioMediaLine />
-      <Captcha ref={captchaRef} onToken={setCaptchaToken} onTokenCleared={() => setCaptchaToken(undefined)} />
-      {queryError && <ErrorAlert>{queryError.message}</ErrorAlert>}
-      {mutationError && <ErrorAlert>{mutationError.message}</ErrorAlert>}
-      <Button type="submit" disabled={!canSubmit}>
-        {SEND_TO_FILM_STUDIO_LABEL}
-      </Button>
-    </form>
+    <ModalDialog title={SEND_TO_FILM_STUDIO_LABEL} isClosable={!isBusy} onClose={onClose}>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+        <SelectField<string>
+          label="Project"
+          value={selectedProjectId}
+          options={projectOptions}
+          isDisabled={isBusy}
+          onChange={setSelectedProjectId}
+        />
+        {isNewProject && (
+          <>
+            <TextField
+              label="Project name"
+              value={draft.name}
+              isDisabled={isBusy}
+              onChange={(name) => updateDraft({ name })}
+            />
+            <SelectField<FilmLanguage>
+              label="Language"
+              value={draft.language}
+              options={FILM_LANGUAGE_OPTIONS}
+              isDisabled
+              onChange={(language) => updateDraft({ language })}
+            />
+            <SelectField<Orientation>
+              label="Frame"
+              value={draft.orientation}
+              options={ORIENTATION_OPTIONS}
+              isDisabled
+              onChange={(orientation) => updateDraft({ orientation })}
+            />
+            <SelectField<string>
+              label="Style"
+              value={draft.styleId}
+              options={stylesToOptions(stylesQuery.data, draft.styleId)}
+              isDisabled={isBusy}
+              onChange={(styleId) => updateDraft({ styleId })}
+            />
+            <SelectField<string>
+              label="Default clip length"
+              value={draft.clipDurationS}
+              options={CLIP_DURATION_OPTIONS}
+              hint={DEFAULT_CLIP_LENGTH_HINT}
+              isDisabled={isBusy}
+              onChange={(clipDurationS) => updateDraft({ clipDurationS })}
+            />
+            <FilmNarrationFields
+              settings={draft}
+              voiceOptions={voicesToOptions(voicesQuery.data)}
+              isDisabled={isBusy}
+              onChange={updateDraft}
+            />
+          </>
+        )}
+        <FilmStudioMediaLine />
+        <Captcha ref={captchaRef} onToken={setCaptchaToken} onTokenCleared={() => setCaptchaToken(undefined)} />
+        {queryError && <ErrorAlert>{queryError.message}</ErrorAlert>}
+        {mutationError && <ErrorAlert>{mutationError.message}</ErrorAlert>}
+        <SendToFilmStudioButtons canSubmit={canSubmit} isBusy={isBusy} onCancel={onClose} />
+      </form>
+    </ModalDialog>
   );
 }

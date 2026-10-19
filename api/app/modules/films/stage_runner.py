@@ -8,7 +8,7 @@ from typing import Protocol
 
 from app.db import utc_now
 from app.modules.films.errors import EpisodeActionNotAllowedError, FilmConflictError
-from app.modules.films.film_access import EpisodeContext, ensure_project_active
+from app.modules.films.film_access import EpisodeContext, PartContext, ensure_project_active
 from app.modules.films.film_files import FilmFiles
 from app.modules.films.media_queue import FilmMediaQueue, SceneOrderContext
 from app.modules.films.models import (
@@ -23,20 +23,31 @@ from app.modules.films.models import (
     Scene,
     VoiceTemplate,
 )
+from app.modules.films.part_rules import to_part_number
 from app.modules.films.repository import FilmRepository
 from app.modules.media_generation.models import GenerationRequest
 from app.modules.media_generation.service import GenerationService
 
 STAGE_ORDER = (
+    EpisodeStep.WRITING_OUTLINE,
     EpisodeStep.WRITING_SCRIPT,
+    EpisodeStep.UPDATING_STORY_BIBLE,
     EpisodeStep.GENERATING_REFERENCES,
     EpisodeStep.GENERATING_SCENE_IMAGES,
     EpisodeStep.GENERATING_CLIPS,
     EpisodeStep.GENERATING_AUDIO,
     EpisodeStep.ASSEMBLING,
 )
-WORKER_STEPS = frozenset({EpisodeStep.WRITING_SCRIPT, EpisodeStep.ASSEMBLING})
+WORKER_STEPS = frozenset(
+    {
+        EpisodeStep.WRITING_OUTLINE,
+        EpisodeStep.WRITING_SCRIPT,
+        EpisodeStep.UPDATING_STORY_BIBLE,
+        EpisodeStep.ASSEMBLING,
+    }
+)
 STOP_POINT_KEYS_BY_STEP = {
+    EpisodeStep.WRITING_OUTLINE: "afterOutline",
     EpisodeStep.WRITING_SCRIPT: "afterScript",
     EpisodeStep.GENERATING_REFERENCES: "afterReferences",
     EpisodeStep.GENERATING_SCENE_IMAGES: "afterSceneImages",
@@ -45,8 +56,14 @@ STAGE_FAILED_MESSAGE = "{items} failed — fix them and resume"
 FAILED_ITEM_TEMPLATE = "{count} {item}(s)"
 NO_NARRATOR_MESSAGE = "Pick a narrator voice for the project or turn narration off"
 REWRITE_BLOCKED_MESSAGE = "Scenes already have images or clips — delete them before rewriting"
+PART_REWRITE_BLOCKED_MESSAGE = (
+    "Part {number} already has images or clips — delete them before rewriting"
+)
 GENERATION_RUNNING_MESSAGE = "Episode {number} has generation running"
 REWRITABLE_STATUSES = frozenset({EpisodeStatus.DRAFT, EpisodeStatus.PAUSED, EpisodeStatus.FAILED})
+PART_REWRITABLE_STATUSES = frozenset(
+    {EpisodeStatus.PAUSED, EpisodeStatus.FAILED, EpisodeStatus.DONE}
+)
 MS_PER_SECOND = 1000
 NEW_MEDIA_STATUSES = frozenset({MediaStatus.NONE})
 
@@ -60,6 +77,7 @@ class EpisodeAction(StrEnum):
     STOP = "stop"
     ASSEMBLE = "assemble"
     REWRITE_SCRIPT = "rewrite the script of"
+    REWRITE_PART = "rewrite a part of"
 
 
 ALLOWED_STATUS_BY_ACTION = {
@@ -98,8 +116,16 @@ class AssembledFilm:
     duration_ms: int
 
 
+class OutlineWriter(Protocol):
+    def write_outline(self, episode_id: str) -> None: ...
+
+
 class ScriptWriter(Protocol):
-    def write_script(self, episode_id: str) -> None: ...
+    def write_part(self, part_id: str) -> None: ...
+
+
+class StoryBibleUpdater(Protocol):
+    def update_story_bible(self, episode_id: str) -> None: ...
 
 
 class EpisodeAssembler(Protocol):
@@ -134,7 +160,7 @@ class EpisodeStageRunner:
             self._ensure_narrator(context.project)
             self._run_from(
                 episode,
-                EpisodeStep.WRITING_SCRIPT,
+                EpisodeStep.WRITING_OUTLINE,
                 {"started_at": utc_now(), "finished_at": None, "paused_stop_point": None},
             )
             return self._reload(episode)
@@ -143,14 +169,14 @@ class EpisodeStageRunner:
         with self._lock:
             episode = self._reload_for(context, EpisodeAction.CONTINUE)
             self._ensure_narrator(context.project)
-            self._run_from(episode, episode.step or EpisodeStep.WRITING_SCRIPT, {})
+            self._run_from(episode, episode.step or EpisodeStep.WRITING_OUTLINE, {})
             return self._reload(episode)
 
     def resume(self, context: EpisodeContext) -> Episode:
         with self._lock:
             episode = self._reload_for(context, EpisodeAction.RESUME)
             self._ensure_narrator(context.project)
-            self._run_from(episode, episode.step or EpisodeStep.WRITING_SCRIPT, {})
+            self._run_from(episode, episode.step or EpisodeStep.WRITING_OUTLINE, {})
             return self._reload(episode)
 
     def assemble(self, context: EpisodeContext) -> Episode:
@@ -187,15 +213,39 @@ class EpisodeStageRunner:
             scenes = self._tools.repository.find_scenes(episode.id)
             if any(scene.image_path or scene.clip_path for scene in scenes):
                 raise FilmConflictError(REWRITE_BLOCKED_MESSAGE)
-            self._tools.repository.delete_scenes(episode.id)
-            for scene in scenes:
-                self._tools.files.delete_dir(
-                    self._tools.files.scene_dir(context.project.id, episode.id, scene.id)
+            self._tools.repository.delete_script(episode.id)
+            self._delete_scene_dirs(context.project, scenes)
+            self._run_from(
+                episode,
+                EpisodeStep.WRITING_OUTLINE,
+                {"started_at": episode.started_at or utc_now(), "paused_stop_point": None},
+            )
+            return self._reload(episode)
+
+    def rewrite_part(self, context: PartContext) -> Episode:
+        with self._lock:
+            episode = self._reload(context.episode)
+            ensure_project_active(context.project)
+            if episode.status not in PART_REWRITABLE_STATUSES:
+                raise EpisodeActionNotAllowedError(
+                    EpisodeAction.REWRITE_PART, episode.number, episode.status
                 )
+            self._ensure_narrator(context.project)
+            if self._tools.repository.find_open_requests_for_episode(episode.id):
+                raise FilmConflictError(GENERATION_RUNNING_MESSAGE.format(number=episode.number))
+            scenes = self._tools.repository.find_part_scenes(context.part.id)
+            if any(scene.image_path or scene.clip_path for scene in scenes):
+                raise FilmConflictError(
+                    PART_REWRITE_BLOCKED_MESSAGE.format(
+                        number=to_part_number(context.part.position)
+                    )
+                )
+            self._tools.repository.clear_part_script(context.part.id)
+            self._delete_scene_dirs(context.project, scenes)
             self._run_from(
                 episode,
                 EpisodeStep.WRITING_SCRIPT,
-                {"started_at": episode.started_at or utc_now(), "paused_stop_point": None},
+                {"finished_at": None, "paused_stop_point": None},
             )
             return self._reload(episode)
 
@@ -217,12 +267,12 @@ class EpisodeStageRunner:
                 return False
             return self._settle_stage(episode, episode.step, NEW_MEDIA_STATUSES)
 
-    def finish_script(self, episode_id: str) -> None:
+    def finish_worker_stage(self, episode_id: str, step: EpisodeStep) -> None:
         with self._lock:
             episode = self._tools.repository.find_episode(episode_id)
-            if not _is_running_at(episode, EpisodeStep.WRITING_SCRIPT):
+            if not _is_running_at(episode, step):
                 return
-            self._finish_stage(episode, EpisodeStep.WRITING_SCRIPT)
+            self._finish_stage(episode, step)
 
     def finish_assembly(self, episode_id: str, film: AssembledFilm) -> None:
         with self._lock:
@@ -259,6 +309,12 @@ class EpisodeStageRunner:
     def _ensure_narrator(self, project: FilmProject) -> None:
         if project.allow_narration and project.narrator_voice_id is None:
             raise FilmConflictError(NO_NARRATOR_MESSAGE)
+
+    def _delete_scene_dirs(self, project: FilmProject, scenes: Sequence[Scene]) -> None:
+        for scene in scenes:
+            self._tools.files.delete_dir(
+                self._tools.files.scene_dir(project.id, scene.episode_id, scene.id)
+            )
 
     def _run_from(self, episode: Episode, step: EpisodeStep, extra_values: dict) -> None:
         self._tools.repository.update_episode(

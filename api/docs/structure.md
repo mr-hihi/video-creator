@@ -36,7 +36,7 @@ api/
 | `providers/` | `providers`, `provider_routes`, catalog, encrypted keys, connection test (domain 7) |
 | `media_generation/` | `film_generation_requests`, the generation worker, retry policy, media adapters (4.3, 7) |
 | `film_clones/` | the four `film_clone*` tables, clone steps, AI reply normalising, clone image targets (domain 5) |
-| `films/` | the seven `film_*` tables, episode stages, script writer, scene edits, film request targets, assembly, thumbnails (domain 4) |
+| `films/` | the eight `film_*` tables, episode stages, outline / script / story bible writers, episode parts, scene edits, film request targets, assembly, thumbnails (domain 4) |
 
 ## Placement rules
 

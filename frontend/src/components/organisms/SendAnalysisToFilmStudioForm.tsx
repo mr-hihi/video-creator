@@ -2,13 +2,14 @@
 
 import { useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/atoms/Button";
 import { ErrorAlert } from "@/components/atoms/ErrorAlert";
+import { ModalDialog } from "@/components/atoms/ModalDialog";
 import { AiModelLine } from "@/components/molecules/AiModelLine";
 import { Captcha, type CaptchaHandle } from "@/components/molecules/Captcha";
 import { FilmLookFields } from "@/components/molecules/FilmLookFields";
 import { NumberField } from "@/components/molecules/NumberField";
 import { SelectField } from "@/components/molecules/SelectField";
+import { SendToFilmStudioButtons } from "@/components/molecules/SendToFilmStudioButtons";
 import { TextAreaField } from "@/components/molecules/TextAreaField";
 import { TextField } from "@/components/molecules/TextField";
 import {
@@ -17,8 +18,8 @@ import {
   IDEA_MAX_LENGTH,
   NEW_PROJECT_LABEL,
   NEW_PROJECT_VALUE,
+  SEND_TO_FILM_STUDIO_LABEL,
   TARGET_DURATION_LOWER_LIMIT_S,
-  TARGET_DURATION_UPPER_LIMIT_S,
 } from "@/features/films/constants";
 import {
   useCreateFilmEpisodeMutation,
@@ -29,8 +30,8 @@ import {
 } from "@/features/films/queries";
 import type { Episode, FilmLookSettings } from "@/features/films/types";
 import {
+  buildAnalysisProjectFields,
   buildFilmEpisodePath,
-  buildMakeFilmProjectFields,
   buildProjectNameFromFilename,
   chooseFilmLanguage,
   createDefaultLookSettings,
@@ -47,11 +48,12 @@ import { IS_CAPTCHA_ENABLED } from "@/lib/captcha/captchaWidget";
 import { useAppSelector } from "@/store/hooks";
 import { FilmStudioMediaLine } from "./FilmStudioMediaLine";
 
-interface MakeFilmFormProps {
+interface SendAnalysisToFilmStudioFormProps {
   job: JobDetail;
+  onClose: () => void;
 }
 
-export function MakeFilmForm({ job }: MakeFilmFormProps) {
+export function SendAnalysisToFilmStudioForm({ job, onClose }: SendAnalysisToFilmStudioFormProps) {
   const router = useRouter();
   const uploadLanguage = useAppSelector(selectUploadLanguage);
   const projectsQuery = useFilmProjectsQuery(ACTIVE_PROJECT_STATUS);
@@ -123,7 +125,7 @@ export function MakeFilmForm({ job }: MakeFilmFormProps) {
       createEpisode(selectedProjectId);
       return;
     }
-    createProjectMutation.mutate(buildMakeFilmProjectFields(projectName, lookSettings), {
+    createProjectMutation.mutate(buildAnalysisProjectFields(projectName, lookSettings), {
       onSuccess: (project) => {
         setSelectedProjectId(project.id);
         createEpisode(project.id);
@@ -133,49 +135,48 @@ export function MakeFilmForm({ job }: MakeFilmFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-      <SelectField<string>
-        label="Project"
-        value={selectedProjectId}
-        options={projectOptions}
-        isDisabled={isBusy}
-        onChange={setSelectedProjectId}
-      />
-      {isNewProject && (
-        <>
-          <TextField label="Project name" value={projectName} isDisabled={isBusy} onChange={setProjectName} />
-          <FilmLookFields
-            settings={lookSettings}
-            styleOptions={stylesToOptions(stylesQuery.data, lookSettings.styleId)}
-            isLookFixed={false}
-            isDisabled={isBusy}
-            onChange={(changes) => setLookSettings((currentSettings) => ({ ...currentSettings, ...changes }))}
-          />
-        </>
-      )}
-      <NumberField
-        label="Target length"
-        value={targetDurationText}
-        min={TARGET_DURATION_LOWER_LIMIT_S}
-        max={TARGET_DURATION_UPPER_LIMIT_S}
-        isDisabled={isBusy}
-        onChange={setTargetDurationText}
-      />
-      <TextAreaField
-        label="Extra direction"
-        value={extraDirection}
-        maxLength={IDEA_MAX_LENGTH}
-        isDisabled={isBusy}
-        onChange={setExtraDirection}
-      />
-      {aiModelStatus && <AiModelLine status={aiModelStatus} />}
-      <FilmStudioMediaLine />
-      <Captcha ref={captchaRef} onToken={setCaptchaToken} onTokenCleared={() => setCaptchaToken(undefined)} />
-      {queryError && <ErrorAlert>{queryError.message}</ErrorAlert>}
-      {mutationError && <ErrorAlert>{mutationError.message}</ErrorAlert>}
-      <Button type="submit" disabled={!canSubmit}>
-        Make a film
-      </Button>
-    </form>
+    <ModalDialog title={SEND_TO_FILM_STUDIO_LABEL} isClosable={!isBusy} onClose={onClose}>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+        <SelectField<string>
+          label="Project"
+          value={selectedProjectId}
+          options={projectOptions}
+          isDisabled={isBusy}
+          onChange={setSelectedProjectId}
+        />
+        {isNewProject && (
+          <>
+            <TextField label="Project name" value={projectName} isDisabled={isBusy} onChange={setProjectName} />
+            <FilmLookFields
+              settings={lookSettings}
+              styleOptions={stylesToOptions(stylesQuery.data, lookSettings.styleId)}
+              isLookFixed={false}
+              isDisabled={isBusy}
+              onChange={(changes) => setLookSettings((currentSettings) => ({ ...currentSettings, ...changes }))}
+            />
+          </>
+        )}
+        <NumberField
+          label="Target length"
+          value={targetDurationText}
+          min={TARGET_DURATION_LOWER_LIMIT_S}
+          isDisabled={isBusy}
+          onChange={setTargetDurationText}
+        />
+        <TextAreaField
+          label="Extra direction"
+          value={extraDirection}
+          maxLength={IDEA_MAX_LENGTH}
+          isDisabled={isBusy}
+          onChange={setExtraDirection}
+        />
+        {aiModelStatus && <AiModelLine status={aiModelStatus} />}
+        <FilmStudioMediaLine />
+        <Captcha ref={captchaRef} onToken={setCaptchaToken} onTokenCleared={() => setCaptchaToken(undefined)} />
+        {queryError && <ErrorAlert>{queryError.message}</ErrorAlert>}
+        {mutationError && <ErrorAlert>{mutationError.message}</ErrorAlert>}
+        <SendToFilmStudioButtons canSubmit={canSubmit} isBusy={isBusy} onCancel={onClose} />
+      </form>
+    </ModalDialog>
   );
 }

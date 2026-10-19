@@ -182,15 +182,18 @@ thread "generation-worker", every FILM_WORKER_POLL_INTERVAL_SEC or on notify():
 
 ## Film Studio
 
-`app/modules/films/` owns the seven `film_*` tables of domain 4 (projects, characters, project links, styles,
-voice templates, episodes, scenes) and the seven film request kinds.
+`app/modules/films/` owns the eight `film_*` tables of domain 4 (projects, characters, project links, styles,
+voice templates, episodes, episode parts, scenes) and the seven film request kinds.
 
 ```
-POST /films/episodes/{id}/start ─▶ EpisodeStageRunner.start (lock) ─▶ running @ writing_script ─▶ BatchWorker.notify()
-batch worker idle task EpisodeStepRunner:
-   running @ writing_script ─▶ EpisodeScriptWriter (AiCaller, filmScript model) ─▶ script_replies ─▶ save_script
-   running @ assembling     ─▶ FfmpegEpisodeAssembler ─▶ output/{stem}.mp4 + .srt
-   ─▶ EpisodeStageRunner.finish_script / finish_assembly / fail_worker_step
+POST /films/episodes/{id}/start ─▶ EpisodeStageRunner.start (lock) ─▶ running @ writing_outline ─▶ BatchWorker.notify()
+batch worker idle task EpisodeStepRunner (one unit per call):
+   running @ writing_outline      ─▶ EpisodeOutlineWriter (filmScript model) ─▶ outline_replies ─▶ save_outline
+   running @ writing_script       ─▶ EpisodeScriptWriter.write_part (first part without scenes) ─▶ script_replies
+                                      ─▶ save_part_script; finished once every part has scenes
+   running @ updating_story_bible ─▶ StoryBibleWriter ─▶ story_bible_replies ─▶ save_story_bible
+   running @ assembling           ─▶ FfmpegEpisodeAssembler ─▶ output/{stem}.mp4 + .srt
+   ─▶ EpisodeStageRunner.finish_worker_stage / finish_assembly / fail_worker_step
 generation stages (references → scene images → clips → audio):
    _enter_stage queues `none` + `failed` items through FilmMediaQueue ─▶ GenerationService.queue
    generation worker ─▶ film GenerationTarget (status, file, resets) ─▶ on_final ─▶ EpisodeStageRunner.advance
@@ -201,16 +204,20 @@ generation stages (references → scene images → clips → audio):
 - `EpisodeStageRunner` holds one process-wide lock; every status change of an episode (API actions, request
   finals, the idle task) goes through it, so two threads never move the same episode.
 - `paused_stop_point` remembers the stop point the episode paused at; `Continue` never pauses there again.
-- `writing_script` and `assembling` run their `claude` / ffmpeg processes through `EpisodeStepCommands`, a
-  `CommandRunner` of their own (the script writer gets an `AiCaller` built on it): `stop` kills them without
-  touching job or probe processes, and `save_script`
-  drops a script whose episode is no longer `running @ writing_script`.
+- The three writing steps and `assembling` run their `claude` / ffmpeg processes through
+  `EpisodeStepCommands`, a `CommandRunner` of their own (the writers share an `AiCaller` built on it): `stop`
+  kills them without touching job or probe processes, and `save_outline` / `save_part_script` /
+  `save_story_bible` drop a reply whose episode is no longer `running` at that step.
+- The writers share `story_briefs.py`: the story context of 4.2 (series, story bible, earlier episodes with
+  their summaries, idea or film analysis) and the `AiCallError` → `EpisodeStepFailedError` wrapping.
+- `ffmpeg_assembler.py` gives every ffmpeg / ffprobe command the whole `FILM_ASSEMBLY_TIMEOUT_SEC`, so a film
+  of any length can be assembled.
 - Stage state is read from the targets (`reference_status`, `image_status`, …), not from request rows, so a
   stage moves on whoever queued the request (Cast panel, scene card or the stage itself).
 - The idle task also calls `advance` for running episodes whose generation stage has nothing open, which
   recovers a crash between moving `step` and queuing.
-- Pure parts: `film_prompts.py` (4.1 / 4.3 prompts), `script_replies.py` (4.2 normalising),
-  `assembly_plan.py` (4.4 timing, cues, filter graphs). Paths: `film_files.py` (`storage/films/`).
+- Pure parts: `film_prompts.py` (4.1 / 4.3 prompts), `outline_replies.py`, `script_replies.py` and
+  `story_bible_replies.py` (4.2 normalising), `assembly_plan.py` (4.4 timing, cues, filter graphs). Paths: `film_files.py` (`storage/films/`).
   Rules: [../../docs/business/4-film-studio.md](../../docs/business/4-film-studio.md).
 
 ## Prompt presets
@@ -233,7 +240,7 @@ raising on a non-zero exit.
 | --- | --- | --- |
 | `ffmpeg`, `ffprobe` | `FFMPEG_BIN`, `FFPROBE_BIN` | `MEDIA_TIMEOUT_SEC` |
 | `whisper-cli` | `WHISPER_BIN`, `WHISPER_MODEL_PATH` | `WHISPER_TIMEOUT_SEC` |
-| `claude` (provider `claude_cli`; the model comes from Settings) | `CLAUDE_BIN` | `AI_MOMENTS_TIMEOUT_SEC` (moments), `FILM_PROMPT_TIMEOUT_SEC` (prompt passes), `FILM_SCRIPT_TIMEOUT_SEC` (episode script), `CLONE_AI_SILENCE_SEC` (film clone, without output) + `CLONE_AI_MAX_RUN_SEC` (film clone, in all); `PROVIDER_TEST_TIMEOUT_SEC` for `claude auth status --json` |
+| `claude` (provider `claude_cli`; the model comes from Settings) | `CLAUDE_BIN` | `AI_MOMENTS_TIMEOUT_SEC` (moments), `FILM_PROMPT_TIMEOUT_SEC` (prompt passes), `FILM_SCRIPT_TIMEOUT_SEC` (each outline, part and story bible call), `CLONE_AI_SILENCE_SEC` (film clone, without output) + `CLONE_AI_MAX_RUN_SEC` (film clone, in all); `PROVIDER_TEST_TIMEOUT_SEC` for `claude auth status --json` |
 | `ffmpeg` scene detection | `FFMPEG_BIN`, `FILM_SCENE_THRESHOLD` | `FILM_SCENE_TIMEOUT_SEC` |
 | `yt-dlp` (dependency in `pyproject.toml`, runs with `--js-runtimes node`) | `YTDLP_BIN` | `YOUTUBE_TIMEOUT_SEC` in the worker; 30 s on the create request |
 

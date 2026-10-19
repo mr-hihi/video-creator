@@ -5,11 +5,11 @@ like the business doc; IDs never change when a case moves between files.
 
 | File | Cases |
 |---|---|
-| [4.1-projects-and-library.md](./4-film-studio/4.1-projects-and-library.md) | TC-FS-01 → TC-FS-10, TC-FS-49 |
-| [4.2-episodes-and-script.md](./4-film-studio/4.2-episodes-and-script.md) | TC-FS-11 → TC-FS-21, TC-FS-47 → TC-FS-48, TC-FS-53 |
+| [4.1-projects-and-library.md](./4-film-studio/4.1-projects-and-library.md) | TC-FS-01 → TC-FS-10, TC-FS-49, TC-FS-67 |
+| [4.2-episodes-and-script.md](./4-film-studio/4.2-episodes-and-script.md) | TC-FS-11 → TC-FS-21, TC-FS-47 → TC-FS-48, TC-FS-53, TC-FS-57 → TC-FS-64 |
 | [4.3-scenes-and-generation.md](./4-film-studio/4.3-scenes-and-generation.md) | TC-FS-22 → TC-FS-31, TC-FS-50 → TC-FS-51, TC-FS-54 |
 | [4.4-audio-and-assembly.md](./4-film-studio/4.4-audio-and-assembly.md) | TC-FS-32 → TC-FS-40 |
-| [4.5-screens.md](./4-film-studio/4.5-screens.md) | TC-FS-41 → TC-FS-46, TC-FS-52 |
+| [4.5-screens.md](./4-film-studio/4.5-screens.md) | TC-FS-41 → TC-FS-46, TC-FS-52, TC-FS-55 → TC-FS-56, TC-FS-65 → TC-FS-66 |
 
 ## Test environment
 

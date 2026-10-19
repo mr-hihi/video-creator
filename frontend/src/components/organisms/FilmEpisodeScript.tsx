@@ -4,24 +4,22 @@ import Link from "next/link";
 import { AudioPlayer } from "@/components/atoms/AudioPlayer";
 import { ErrorAlert } from "@/components/atoms/ErrorAlert";
 import { Panel } from "@/components/atoms/Panel";
-import { TextArea } from "@/components/atoms/TextArea";
-import { CopyButton } from "@/components/molecules/CopyButton";
+import { PromptsUsedList } from "@/components/molecules/PromptsUsedList";
 import { SavableTextAreaField } from "@/components/molecules/SavableTextAreaField";
 import { SummaryList, type SummaryItem } from "@/components/molecules/SummaryList";
-import { EMPTY_VALUE_LABEL, EPISODE_SOURCE_LABELS } from "@/features/films/constants";
+import { EMPTY_VALUE_LABEL, EPISODE_SOURCE_LABELS, SUMMARY_HINT } from "@/features/films/constants";
 import { useUpdateFilmEpisodeMutation } from "@/features/films/queries";
 import type { EpisodeChanges, EpisodeDetail } from "@/features/films/types";
 import {
   buildEpisodeSourcePath,
   buildFilmFileUrl,
+  describeEpisodeAiUsed,
   describeMediaProgress,
   findQueuedRequest,
 } from "@/features/films/utils";
 import { DELETED_SOURCE_LABEL, MISSING_OUTPUT_MESSAGE } from "@/features/jobs/constants";
 import { describePresetSnapshot } from "@/features/promptPresets/utils";
 import { FilmCancelRequestButton } from "./FilmCancelRequestButton";
-
-const FILM_SCRIPT_PROMPT_LABEL = "filmScript prompt";
 
 interface FilmEpisodeScriptProps {
   episode: EpisodeDetail;
@@ -40,6 +38,14 @@ export function FilmEpisodeScript({ episode, isLocked }: FilmEpisodeScriptProps)
     <Panel title="Script">
       <div className="flex flex-col gap-5">
         <SummaryList items={buildScriptSummaryItems(episode)} />
+        <SavableTextAreaField
+          label="Summary"
+          savedValue={episode.summary ?? ""}
+          hint={SUMMARY_HINT}
+          isDisabled={isLocked}
+          isSaving={updateEpisodeMutation.isPending}
+          onSave={(summary) => saveChanges({ summary })}
+        />
         <div className="flex flex-col gap-2">
           <SavableTextAreaField
             label="Music prompt"
@@ -70,12 +76,15 @@ export function FilmEpisodeScript({ episode, isLocked }: FilmEpisodeScriptProps)
         />
         {updateEpisodeMutation.isError && <ErrorAlert>{updateEpisodeMutation.error.message}</ErrorAlert>}
         <details className="rounded-lg border border-border bg-background px-3 py-2">
-          <summary className="cursor-pointer text-sm font-medium">Prompt used</summary>
-          <div className="mt-3 flex flex-col gap-2">
-            <div className="self-end">
-              <CopyButton text={episode.filmScriptPrompt} />
-            </div>
-            <TextArea value={episode.filmScriptPrompt} rows={8} readOnly aria-label={FILM_SCRIPT_PROMPT_LABEL} />
+          <summary className="cursor-pointer text-sm font-medium">Prompts used</summary>
+          <div className="mt-3">
+            <PromptsUsedList
+              prompts={{
+                filmOutline: episode.filmOutlinePrompt,
+                filmScript: episode.filmScriptPrompt,
+                storyBible: episode.storyBiblePrompt,
+              }}
+            />
           </div>
         </details>
       </div>
@@ -87,7 +96,7 @@ function buildScriptSummaryItems(episode: EpisodeDetail): SummaryItem[] {
   return [
     { term: "Logline", description: episode.logline ?? EMPTY_VALUE_LABEL },
     { term: "Prompt preset", description: describePresetSnapshot(episode.preset) },
-    { term: "AI", description: episode.aiUsed.writing_script?.label ?? EMPTY_VALUE_LABEL },
+    { term: "AI", description: describeEpisodeAiUsed(episode) },
     { term: "Source", description: <EpisodeSourceDescription episode={episode} /> },
   ];
 }

@@ -71,7 +71,9 @@ class EpisodeStatus(StrEnum):
 
 
 class EpisodeStep(StrEnum):
+    WRITING_OUTLINE = "writing_outline"
     WRITING_SCRIPT = "writing_script"
+    UPDATING_STORY_BIBLE = "updating_story_bible"
     GENERATING_REFERENCES = "generating_references"
     GENERATING_SCENE_IMAGES = "generating_scene_images"
     GENERATING_CLIPS = "generating_clips"
@@ -138,6 +140,9 @@ class FilmProject(Base):
     status: Mapped[ProjectStatus] = mapped_column(build_string_enum_type(ProjectStatus, 16))
     last_episode_number: Mapped[int] = mapped_column(Integer, default=0)
     flow_project_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    story_bible: Mapped[str | None] = mapped_column(LONG_TEXT_TYPE, nullable=True)
+    story_bible_episode_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    story_bible_updated_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now, onupdate=utc_now)
 
@@ -190,6 +195,7 @@ class Episode(Base):
     number: Mapped[int] = mapped_column(Integer)
     title: Mapped[str] = mapped_column(String(150))
     logline: Mapped[str | None] = mapped_column(Text, nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     source: Mapped[EpisodeSource] = mapped_column(build_string_enum_type(EpisodeSource, 16))
     idea: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_job_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
@@ -211,7 +217,9 @@ class Episode(Base):
     music_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     music_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     preset: Mapped[dict[str, Any]] = mapped_column(JSON)
+    film_outline_prompt: Mapped[str | None] = mapped_column(LONG_TEXT_TYPE, nullable=True)
     film_script_prompt: Mapped[str] = mapped_column(LONG_TEXT_TYPE)
+    story_bible_prompt: Mapped[str | None] = mapped_column(LONG_TEXT_TYPE, nullable=True)
     ai_used: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     status: Mapped[EpisodeStatus] = mapped_column(build_string_enum_type(EpisodeStatus, 16))
     step: Mapped[EpisodeStep | None] = mapped_column(
@@ -229,12 +237,31 @@ class Episode(Base):
     finished_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
 
 
+class EpisodePart(Base):
+    __tablename__ = "film_episode_parts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    episode_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("film_episodes.id", ondelete="CASCADE"), index=True
+    )
+    position: Mapped[int] = mapped_column(Integer)
+    title: Mapped[str] = mapped_column(String(150))
+    plan: Mapped[str] = mapped_column(Text)
+    target_duration_s: Mapped[int] = mapped_column(Integer)
+    recap: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now, onupdate=utc_now)
+
+
 class Scene(Base):
     __tablename__ = "film_scenes"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     episode_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("film_episodes.id", ondelete="CASCADE"), index=True
+    )
+    part_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("film_episode_parts.id", ondelete="CASCADE"), index=True
     )
     position: Mapped[int] = mapped_column(Integer)
     image_prompt: Mapped[str] = mapped_column(Text)

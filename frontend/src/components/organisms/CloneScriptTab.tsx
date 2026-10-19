@@ -1,15 +1,23 @@
+import { Button } from "@/components/atoms/Button";
 import { PlaceholderMessage } from "@/components/atoms/PlaceholderMessage";
 import { CopyButton } from "@/components/molecules/CopyButton";
+import { OPEN_LOCALIZATION_LABEL } from "@/features/filmClones/constants";
 import type { FilmCloneDetail } from "@/features/filmClones/types";
-import { buildScriptMarkdown, canRelocalizeFilmClone, describeMissingCloneContent } from "@/features/filmClones/utils";
+import {
+  buildScriptMarkdown,
+  canRelocalizeFilmClone,
+  describeFilmCloneStep,
+  describeMissingCloneContent,
+} from "@/features/filmClones/utils";
 import { CloneSceneCard } from "./CloneSceneCard";
 import { RelocalizeButton } from "./RelocalizeButton";
 
 interface CloneScriptTabProps {
   clone: FilmCloneDetail;
+  onOpenLocalization: () => void;
 }
 
-export function CloneScriptTab({ clone }: CloneScriptTabProps) {
+export function CloneScriptTab({ clone, onOpenLocalization }: CloneScriptTabProps) {
   const hasScenes = clone.scenes.length > 0;
   const shotsById = new Map(clone.shots.map((shot) => [shot.id, shot]));
 
@@ -24,7 +32,7 @@ export function CloneScriptTab({ clone }: CloneScriptTabProps) {
           <CopyButton text={buildScriptMarkdown(clone)} label="Copy script" />
         </header>
       ) : (
-        <PlaceholderMessage>{describeMissingCloneContent(clone)}</PlaceholderMessage>
+        <ScriptPlaceholder clone={clone} onOpenLocalization={onOpenLocalization} />
       )}
       {canRelocalizeFilmClone(clone) && <RelocalizeButton clone={clone} />}
       {hasScenes && (
@@ -36,6 +44,18 @@ export function CloneScriptTab({ clone }: CloneScriptTabProps) {
           ))}
         </ol>
       )}
+    </div>
+  );
+}
+
+function ScriptPlaceholder({ clone, onOpenLocalization }: CloneScriptTabProps) {
+  if (clone.status !== "waiting") return <PlaceholderMessage>{describeMissingCloneContent(clone)}</PlaceholderMessage>;
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <PlaceholderMessage>{describeFilmCloneStep(clone)}</PlaceholderMessage>
+      <Button variant="secondary" onClick={onOpenLocalization}>
+        {OPEN_LOCALIZATION_LABEL}
+      </Button>
     </div>
   );
 }

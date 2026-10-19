@@ -13,19 +13,25 @@ import {
   describeGenerateLabel,
   findQueuedRequest,
   findSettledMediaError,
-  toSceneNumber,
 } from "@/features/films/utils";
 import { MISSING_OUTPUT_MESSAGE } from "@/features/jobs/constants";
 import { FilmCancelRequestButton } from "./FilmCancelRequestButton";
 
 interface FilmSceneNarrationPartProps {
   scene: Scene;
+  sceneNumber: number;
   openRequests: readonly GenerationRequest[];
   isLocked: boolean;
   isSceneBusy: boolean;
 }
 
-export function FilmSceneNarrationPart({ scene, openRequests, isLocked, isSceneBusy }: FilmSceneNarrationPartProps) {
+export function FilmSceneNarrationPart({
+  scene,
+  sceneNumber,
+  openRequests,
+  isLocked,
+  isSceneBusy,
+}: FilmSceneNarrationPartProps) {
   const generateNarrationMutation = useGenerateSceneMediaMutation();
   const busyLabel = describeBusyMedia(scene.narrationStatus);
   const queuedRequest = findQueuedRequest(
@@ -40,7 +46,7 @@ export function FilmSceneNarrationPart({ scene, openRequests, isLocked, isSceneB
         scene.narrationPath ? (
           <AudioPlayer
             src={buildFilmFileUrl(scene.narrationPath, scene.updatedAt)}
-            label={`Scene ${toSceneNumber(scene)} narration`}
+            label={`Scene ${sceneNumber} narration`}
           />
         ) : (
           <PlaceholderMessage>{busyLabel ?? MISSING_OUTPUT_MESSAGE}</PlaceholderMessage>

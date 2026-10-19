@@ -14,7 +14,7 @@ from app.modules.films.schemas import (
 )
 from app.modules.media_generation.schemas import GenerationRequestResponse
 
-CLEARABLE_PROJECT_FIELDS = frozenset({"description", "narrator_voice_id"})
+CLEARABLE_PROJECT_FIELDS = frozenset({"description", "narrator_voice_id", "story_bible"})
 
 router = APIRouter(prefix="/films/projects", tags=["films"])
 

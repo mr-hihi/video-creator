@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -17,6 +18,8 @@ from app.modules.films.models import (
     Character,
     EntityType,
     Episode,
+    EpisodeStatus,
+    EpisodeStep,
     FilmLanguage,
     FilmProject,
     MediaStatus,
@@ -42,6 +45,8 @@ STYLES_BY_ID = {
     "anime": Style(id="anime", name="Anime", is_builtin=True),
 }
 VOICES_BY_ID = {"vt-1": VoiceTemplate(id="vt-1", name="narrator-en")}
+SAVED_AT = datetime.now(UTC)
+STORY_BIBLE_LIMIT = 20000
 
 
 def build_character(character_id: str, name: str, status: MediaStatus) -> Character:
@@ -79,6 +84,16 @@ def build_project(**overrides) -> FilmProject:
 
 ACTIVE = build_project()
 ARCHIVED = build_project(status=ProjectStatus.ARCHIVED)
+
+
+def build_running_episode(number: int, step: EpisodeStep) -> Episode:
+    return Episode(
+        id=f"e-{number}",
+        project_id=PROJECT_ID,
+        number=number,
+        status=EpisodeStatus.RUNNING,
+        step=step,
+    )
 
 
 def build_draft(**overrides) -> ProjectDraft:
@@ -133,6 +148,9 @@ def build_projects(project: FilmProject = ACTIVE, **arrangement):
     ]
     repository.is_linked.return_value = arrangement.get("is_linked", True)
     repository.find_project_scenes.return_value = arrangement.get("scenes", [])
+    repository.find_running_episodes_of_project.return_value = arrangement.get(
+        "running_episodes", []
+    )
     files = MagicMock(spec=FilmFiles)
     files.project_dir.side_effect = lambda project_id: PROJECTS_DIR / project_id
     media_queue = MagicMock(spec=FilmMediaQueue)
@@ -190,6 +208,14 @@ def created_project():
     return SimpleNamespace(detail=detail, added=added_project, linked_ids=linked_ids)
 
 
+@pytest.fixture(params=[15, 20, 30])
+def created_with_long_clip_length(request):
+    projects = build_projects()
+    projects.service.create_project(build_draft(clip_duration_s=request.param))
+    added_project, _ = projects.repository.add_project.call_args.args
+    return SimpleNamespace(actual=added_project.clip_duration_s, expected=request.param)
+
+
 @pytest.fixture
 def created_without_narrator():
     projects = build_projects()
@@ -203,7 +229,7 @@ def created_without_narrator():
     params=[
         (build_draft(name="   "), "Project name must be 1-100 characters"),
         (build_draft(name="n" * 101), "Project name must be 1-100 characters"),
-        (build_draft(clip_duration_s=7), "Clip length must be 4, 6, 8 or 10 seconds"),
+        (build_draft(clip_duration_s=7), "Clip length must be 4, 6, 8, 10, 15, 20 or 30 seconds"),
         (build_draft(style_id="no-such-style"), "Style no-such-style not found"),
         (
             build_draft(narrator_voice_id="00000000-0000-0000-0000-000000000000"),
@@ -305,6 +331,75 @@ def archived_update_error():
 @pytest.fixture
 def invalid_update_error():
     return update_failing(InvalidFilmRequestError, ProjectChanges(clip_duration_s=7))
+
+
+@pytest.fixture
+def frozen_now(monkeypatch):
+    monkeypatch.setattr("app.modules.films.project_service.utc_now", lambda: SAVED_AT)
+
+
+@pytest.fixture(
+    params=[
+        ("  The town sank a century ago.  ", "The town sank a century ago."),
+        ("b" * STORY_BIBLE_LIMIT, "b" * STORY_BIBLE_LIMIT),
+        ("   ", None),
+        ("", None),
+    ]
+)
+def saved_story_bible(request, frozen_now):
+    story_bible, expected_text = request.param
+    repository = update(ProjectChanges(story_bible=story_bible))
+    return SimpleNamespace(
+        actual=repository.update_project.call_args.args,
+        expected=(
+            PROJECT_ID,
+            {
+                "story_bible": expected_text,
+                "story_bible_episode_id": None,
+                "story_bible_updated_at": SAVED_AT,
+            },
+        ),
+    )
+
+
+@pytest.fixture(
+    params=[
+        EpisodeStep.WRITING_OUTLINE,
+        EpisodeStep.WRITING_SCRIPT,
+        EpisodeStep.GENERATING_CLIPS,
+        EpisodeStep.ASSEMBLING,
+    ]
+)
+def story_bible_saved_beside_a_running_episode(request, frozen_now):
+    repository = update(
+        ProjectChanges(story_bible="New canon"),
+        running_episodes=[build_running_episode(2, request.param)],
+    )
+    return repository.update_project.call_args.args
+
+
+@pytest.fixture
+def too_long_story_bible_error():
+    return update_failing(
+        InvalidFilmRequestError, ProjectChanges(story_bible="b" * (STORY_BIBLE_LIMIT + 1))
+    )
+
+
+@pytest.fixture
+def busy_story_bible():
+    projects = build_projects(
+        running_episodes=[
+            build_running_episode(2, EpisodeStep.GENERATING_CLIPS),
+            build_running_episode(3, EpisodeStep.UPDATING_STORY_BIBLE),
+        ]
+    )
+    error = capture(
+        FilmConflictError,
+        lambda: projects.service.update_project(
+            PROJECT_ID, ProjectChanges(story_bible="New canon")
+        ),
+    )
+    return SimpleNamespace(error=error, repository=projects.repository)
 
 
 @pytest.fixture
@@ -482,6 +577,10 @@ def test_create_stores_an_active_project(created_project):
     assert created_project.added.narrator_voice_id == "vt-1"
 
 
+def test_create_accepts_a_long_clip_length(created_with_long_clip_length):
+    assert created_with_long_clip_length.actual == created_with_long_clip_length.expected
+
+
 def test_create_links_each_character_once(created_project):
     assert created_project.linked_ids == ["c-1", "c-2"]
 
@@ -554,7 +653,36 @@ def test_update_of_archived_project_is_refused(archived_update_error):
 
 
 def test_update_rejects_an_invalid_clip_length(invalid_update_error):
-    assert str(invalid_update_error) == "Clip length must be 4, 6, 8 or 10 seconds"
+    assert str(invalid_update_error) == "Clip length must be 4, 6, 8, 10, 15, 20 or 30 seconds"
+
+
+def test_story_bible_save_trims_it_and_marks_it_as_the_users(saved_story_bible):
+    assert saved_story_bible.actual == saved_story_bible.expected
+
+
+def test_story_bible_saves_while_an_episode_runs_another_step(
+    story_bible_saved_beside_a_running_episode,
+):
+    assert story_bible_saved_beside_a_running_episode == (
+        PROJECT_ID,
+        {
+            "story_bible": "New canon",
+            "story_bible_episode_id": None,
+            "story_bible_updated_at": SAVED_AT,
+        },
+    )
+
+
+def test_story_bible_over_20000_characters_is_rejected(too_long_story_bible_error):
+    assert str(too_long_story_bible_error) == "Story bible must be at most 20000 characters"
+
+
+def test_story_bible_is_refused_while_an_episode_updates_it(busy_story_bible):
+    assert str(busy_story_bible.error) == (
+        "Episode 3 is updating the story bible — try again when it finishes"
+    )
+    assert busy_story_bible.repository.update_project.called is False
+    busy_story_bible.repository.find_running_episodes_of_project.assert_called_once_with(PROJECT_ID)
 
 
 def test_archive_sets_the_status(archived_summary):

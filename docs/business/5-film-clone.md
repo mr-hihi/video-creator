@@ -465,7 +465,8 @@ its `detail` and keeps what the user typed.
 
 ### `/film-clone/{id}` — Clone
 
-- Header: `source_filename`, status badge, `Delete` (as in the history; afterwards → `/film-clone`).
+- Header: `source_filename`, status badge, `Send to Film Studio` (enabled only when `done`), `Delete` (as in
+  the history; afterwards → `/film-clone`).
 - Stage bar: `Video notes` · `Assets & shots` · `Localization` · `Script & images`, each `completed` /
   `current` / `waiting` / `failed` / `upcoming`. While `analyzing`, the job's steps show under it with the
   labels of 1.7 and 3.6 and below. While an AI call runs, a line below reads `{model label} is working ·
@@ -503,6 +504,8 @@ its `detail` and keeps what the user typed.
 
 **Tab "Script"**
 
+- No scenes while the clone is `waiting` → the step label (`Waiting for localization choices` /
+  `Waiting for your review`, § Labels) and a button `Open Localization` that opens the `Localization` tab.
 - `script_title`, `logline`, `Copy script` — copies Markdown: `# {title}`, the logline, then per scene
   `## Scene {k} — {mm:ss}`, the description and the dialogue — and reads `Copied` for 2 s.
 - One card per scene, in order: `Scene {k}` · timestamp · shot size · camera angle · asset chips; images
@@ -511,7 +514,8 @@ its `detail` and keeps what the user typed.
   unless 5.4 § Editing scenes allows them.
 - `Back to localization` when 5.1 allows it, with the same confirm.
 
-**Panel "Send to Film Studio"**, only when `done`:
+**Dialog "Send to Film Studio"**, opened by the header button; it shows errors and closes as the
+`Send to Film Studio` dialog of 3.6:
 
 | Element | Detail |
 |---|---|
@@ -520,17 +524,17 @@ its `detail` and keeps what the user typed.
 | `Style`, `Default clip length`, `Narration` with `Narrator voice` | `New project` only; as the `New project` panel of 4.5 |
 | `Frame`, `Language` | `New project` only; fixed to the clone's `aspect` and `script_language`, read-only |
 | Media line | as the `New project` panel of 4.5 |
-| Button | `Send to Film Studio`, with a captcha (when the captcha is on) |
+| Buttons | `Send to Film Studio`, with a captcha (when the captcha is on), and `Cancel` |
 
-- `script_language` not `vi`, `en` or `ja` → the panel reads `Film Studio narrates only Vietnamese, English
-  or Japanese.` and the button is disabled.
-- The button is enabled with a non-blank `Project name` (`New project`), `Narration` off or a narrator voice
-  picked, a captcha token (when the captcha is on) and no request in flight. The captcha resets after every
-  attempt.
-- A new project takes the panel's values; its other fields take the defaults of the `New project` panel (4.5).
-- The button creates the project first when `New project` is chosen (4.1), then the episode with source
-  `film_clone` (4.2), then starts it, and opens `/films/{project id}/episodes/{number}`. A project created
-  before a refused episode stays.
+- `script_language` not `vi`, `en` or `ja` → the dialog reads `Film Studio narrates only Vietnamese, English
+  or Japanese.` and its `Send to Film Studio` is disabled.
+- The dialog's `Send to Film Studio` is enabled with a non-blank `Project name` (`New project`), `Narration`
+  off or a narrator voice picked, a captcha token (when the captcha is on) and no request in flight. The
+  captcha resets after every attempt.
+- A new project takes the dialog's values; its other fields take the defaults of the `New project` panel (4.5).
+- The dialog's `Send to Film Studio` creates the project first when `New project` is chosen (4.1), then the
+  episode with source `film_clone` (4.2), then starts it, and opens `/films/{project id}/episodes/{number}`. A
+  project created before a refused episode stays.
 
 **Panel "Prompts used"**, collapsed: the job's `options.prompts` and the clone's `prompts`, read-only, each
 with `Copy`.

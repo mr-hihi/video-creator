@@ -1,7 +1,6 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from app.modules.films.episode_rules import MAX_SCENES
 from app.modules.films.errors import InvalidFilmRequestError
 from app.modules.films.field_rules import to_bounded_text, to_optional_text
 
@@ -19,7 +18,6 @@ SCENE_CLIP_DURATION_MESSAGE = (
 )
 POSITION_MESSAGE = "Position must be between 0 and {last}"
 TRIM_MESSAGE = "Trim must keep at least 1 s inside the clip"
-TOO_MANY_SCENES_MESSAGE = f"An episode holds at most {MAX_SCENES} scenes"
 CHARACTER_NOT_LINKED_MESSAGE = "Character {character_id} is not in this project"
 
 

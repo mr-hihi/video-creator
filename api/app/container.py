@@ -61,15 +61,19 @@ from app.modules.films.film_files import FilmFiles
 from app.modules.films.film_imports import FilmImports
 from app.modules.films.generation_targets import FilmTargetTools, build_film_targets
 from app.modules.films.media_queue import FilmMediaQueue
+from app.modules.films.outline_writer import EpisodeOutlineWriter
+from app.modules.films.part_service import PartService
 from app.modules.films.project_service import FilmProjectService, FilmProjectTools
 from app.modules.films.repository import FilmRepository
 from app.modules.films.request_service import FilmRequestService, FilmRequestTools
 from app.modules.films.result_files import FilmResultFiles
 from app.modules.films.scene_service import SceneService, SceneServiceTools
-from app.modules.films.script_writer import EpisodeScriptWriter, ScriptWriterTools
+from app.modules.films.script_writer import EpisodeScriptWriter
 from app.modules.films.stage_runner import EpisodeStageRunner, StageRunnerTools
 from app.modules.films.step_commands import EpisodeStepCommands
 from app.modules.films.step_worker import EpisodeStepRunner, EpisodeStepTools
+from app.modules.films.story_bible_writer import StoryBibleWriter
+from app.modules.films.story_briefs import ScriptWriterTools
 from app.modules.films.style_service import FilmStyleService
 from app.modules.films.thumbnail_cropper import CropperConfig, FfmpegThumbnailCropper
 from app.modules.films.thumbnail_service import FilmThumbnailService, ThumbnailServiceTools
@@ -177,6 +181,7 @@ class Container:
     film_style_service: FilmStyleService
     film_voice_service: FilmVoiceService
     film_episode_service: EpisodeService
+    film_part_service: PartService
     film_scene_service: SceneService
     film_stage_runner: EpisodeStageRunner
     film_access: FilmAccess
@@ -221,6 +226,7 @@ class _FilmParts:
     style_service: FilmStyleService
     voice_service: FilmVoiceService
     episode_service: EpisodeService
+    part_service: PartService
     scene_service: SceneService
     stage_runner: EpisodeStageRunner
     access: FilmAccess
@@ -399,6 +405,7 @@ def build_container(settings: Settings) -> Container:
         film_style_service=film_parts.style_service,
         film_voice_service=film_parts.voice_service,
         film_episode_service=film_parts.episode_service,
+        film_part_service=film_parts.part_service,
         film_scene_service=film_parts.scene_service,
         film_stage_runner=film_parts.stage_runner,
         film_access=film_parts.access,
@@ -805,6 +812,7 @@ def _build_film_parts(inputs: _FilmBuildInputs) -> _FilmParts:
             )
         ),
         episode_service=_build_episode_service(inputs, core, analysis_source),
+        part_service=PartService(core.repository, core.access),
         scene_service=SceneService(
             SceneServiceTools(
                 repository=core.repository,
@@ -918,14 +926,12 @@ def _build_episode_step_runner(
 ) -> EpisodeStepRunner:
     settings = inputs.settings
     runner = core.step_commands
-    script_writer = EpisodeScriptWriter(
-        ScriptWriterTools(
-            repository=core.repository,
-            imports=core.imports,
-            analysis_source=analysis_source,
-            ai_caller=_build_ai_caller(settings, runner, inputs.ai_parts),
-            limits=AiLimits(timeout_sec=settings.film_script_timeout_sec),
-        )
+    writer_tools = ScriptWriterTools(
+        repository=core.repository,
+        imports=core.imports,
+        analysis_source=analysis_source,
+        ai_caller=_build_ai_caller(settings, runner, inputs.ai_parts),
+        limits=AiLimits(timeout_sec=settings.film_script_timeout_sec),
     )
     assembler = FfmpegEpisodeAssembler(
         AssemblerConfig(
@@ -941,7 +947,9 @@ def _build_episode_step_runner(
         EpisodeStepTools(
             repository=core.repository,
             stage_runner=core.stage_runner,
-            script_writer=script_writer,
+            outline_writer=EpisodeOutlineWriter(writer_tools),
+            script_writer=EpisodeScriptWriter(writer_tools),
+            story_bible_updater=StoryBibleWriter(writer_tools),
             assembler=assembler,
             commands=core.step_commands,
         )

@@ -21,6 +21,7 @@ from app.modules.film_clones.service import FilmCloneService
 from app.modules.films.character_service import FilmCharacterService
 from app.modules.films.episode_service import EpisodeService
 from app.modules.films.film_access import FilmAccess
+from app.modules.films.part_service import PartService
 from app.modules.films.project_service import FilmProjectService
 from app.modules.films.request_service import FilmRequestService
 from app.modules.films.result_files import FilmResultFiles
@@ -113,6 +114,7 @@ def close_calls():
         film_style_service=MagicMock(spec=FilmStyleService),
         film_voice_service=MagicMock(spec=FilmVoiceService),
         film_episode_service=MagicMock(spec=EpisodeService),
+        film_part_service=MagicMock(spec=PartService),
         film_scene_service=MagicMock(spec=SceneService),
         film_stage_runner=MagicMock(spec=EpisodeStageRunner),
         film_access=MagicMock(spec=FilmAccess),
@@ -200,6 +202,7 @@ def test_build_container_wires_services(container):
     assert isinstance(container.worker, BatchWorker)
     assert isinstance(container.film_project_service, FilmProjectService)
     assert isinstance(container.film_episode_service, EpisodeService)
+    assert isinstance(container.film_part_service, PartService)
     assert isinstance(container.film_stage_runner, EpisodeStageRunner)
     assert isinstance(container.film_request_service, FilmRequestService)
     assert isinstance(container.film_step_commands, EpisodeStepCommands)

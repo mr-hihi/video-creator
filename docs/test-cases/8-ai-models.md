@@ -99,12 +99,12 @@ Test cases for [business/8-ai-models.md](../business/8-ai-models.md). Acronym `A
 - **Precondition:** A1 and P1 as in TC-AIM-04. `PATCH PV/google` `{"apiKey":"AIza-test-0000000000wxyz"}`.
 - **Steps:**
   1. `PATCH S` `{"aiModel":CLI,"inputMode":"whole_video"}`; navigate to http://localhost:5071/
-  2. `PATCH S` `{"aiStepModels":{"filmAnalysis":G4}}`; navigate to `/film-analysis`, then `/film-clone`, then `/film-analysis/{A1}`, then `/films/{P1}` and open `New episode`
+  2. `PATCH S` `{"aiStepModels":{"filmAnalysis":G4}}`; navigate to `/film-analysis`, then `/film-clone`, then `/film-analysis/{A1}` and click `Send to Film Studio` in the header, then `/films/{P1}` and open `New episode`
   3. `PATCH S` `{"aiModel":OA,"aiStepModels":{}}` (no OpenAI key); reload `/`; drop F1 on `Video`
   4. Click `Change`
 - **Expected:**
   - Step 1: above `Upload and convert`, the line `AI: Claude (CLI default) · Input: Whole video` with the link `Change`
-  - Step 2: `New analysis`: `AI: Key moments — Claude (CLI default) · Film analysis — Gemini 4 Argon · Input: Whole video`; `New clone`: `AI: Claude (CLI default) · Input: Subtitles` — its `Input` reads `filmCloneInputMode`; `Rerun with another preset`: `AI: Gemini 4 Argon`; `Make a film` and `New episode`: `AI: Claude (CLI default)`
+  - Step 2: `New analysis`: `AI: Key moments — Claude (CLI default) · Film analysis — Gemini 4 Argon · Input: Whole video`; `New clone`: `AI: Claude (CLI default) · Input: Subtitles` — its `Input` reads `filmCloneInputMode`; `Rerun with another preset`: `AI: Gemini 4 Argon`; the `Send to Film Studio` dialog and `New episode`: `AI: Claude (CLI default)`
   - Step 3: the line reads `AI: GPT-6 Astra — not set up · Input: Whole video`; `Upload and convert` is disabled with the hint `Add the OpenAI key in Settings → General.`
   - Step 4: URL becomes `/settings?tab=ai-models`
 
@@ -369,4 +369,4 @@ Test cases for [business/8-ai-models.md](../business/8-ai-models.md). Acronym `A
   2. Open `/films/{P1}`; create an episode from the idea `A lighthouse keeper finds a message in a bottle.` with stop point after the script; wait until it pauses
 - **Expected:**
   - Step 1: summary `AI` = `Picking key moments: Claude (CLI default) · Writing character image prompts: Claude (CLI default) · Writing character voice prompts: Claude (CLI default) · Writing scene prompts: Claude (CLI default)` — the step labels of 3.6
-  - Step 2: the episode's `Script` panel shows `AI` = `Claude (CLI default)`
+  - Step 2: the episode's `Script` panel shows `AI` = `Writing outline: Claude (CLI default) · Writing script: Claude (CLI default)` — `updating_story_bible` has not run before the pause

@@ -7,12 +7,13 @@
 | `/` | `src/app/page.tsx` | static shell + client organisms | `NewConversionForm` (source switch → `UploadVideoForm` / `YoutubeLinkForm`) + `JobList` in `HomeTemplate` |
 | `/jobs/[id]` | `src/app/jobs/[id]/page.tsx` | server component awaits `params`, client panel | `JobDetailPanel` in `JobDetailTemplate` |
 | `/film-analysis` | `src/app/film-analysis/page.tsx` | static shell + client organisms | `NewFilmAnalysisForm` + `FilmAnalysisHistory` in `FilmAnalysisTemplate` |
-| `/film-analysis/[id]` | `src/app/film-analysis/[id]/page.tsx` | server component awaits `params`, client panel | `FilmAnalysisDetailPanel` (result tabs, prompts used, rerun, `MakeFilmForm`) in `JobDetailTemplate` |
+| `/film-analysis/[id]` | `src/app/film-analysis/[id]/page.tsx` | server component awaits `params`, client panel | `FilmAnalysisDetailPanel` (result tabs, prompts used, rerun, `SendAnalysisToFilmStudioForm` dialog) in `JobDetailTemplate` |
 | `/film-clone` | `src/app/film-clone/page.tsx` | static shell + client organisms | `NewFilmCloneForm` (upload / YouTube) + `FilmCloneHistory` in `FilmCloneTemplate` |
-| `/film-clone/[id]` | `src/app/film-clone/[id]/page.tsx` | server component awaits `params`, client panel | `FilmCloneDetailPanel` (stage bar, AI activity line, summary, `FilmCloneTabs`, `SendToFilmStudioForm`, prompts used) in `JobDetailTemplate` |
+| `/film-clone/[id]` | `src/app/film-clone/[id]/page.tsx` | server component awaits `params`, client panel | `FilmCloneDetailPanel` (stage bar, AI activity line, summary, `FilmCloneTabs`, `SendCloneToFilmStudioForm` dialog, prompts used) in `JobDetailTemplate` |
 | `/films` | `src/app/films/page.tsx` | static shell + client organisms | `FilmProjectsOverview` (`FilmProjectList` + `NewFilmProjectForm`) in `FilmStudioTemplate` |
-| `/films/[id]` | `src/app/films/[id]/page.tsx` | server component awaits `params`, client panel | `FilmProjectDetailPanel` (header, `FilmProjectSettingsForm`, `FilmProjectCast`, `FilmProjectEpisodes`) in `FilmStudioTemplate` |
-| `/films/[id]/episodes/[number]` | `src/app/films/[id]/episodes/[number]/page.tsx` | server component awaits `params`, client panel | `FilmEpisodePanel` (loads the project, then the episode by the id its `episodes` give `number`) in `FilmStudioTemplate` |
+| `/films/[id]` | `src/app/films/[id]/page.tsx` | server component awaits `params` and `searchParams.tab`, client panel | `FilmProjectDetailPanel` (header, tabs `Overview` — `FilmProjectSettingsForm`, `FilmProjectCast`, `FilmProjectEpisodes` — and `Story bible` — `FilmStoryBibleForm`) in `FilmStudioTemplate` |
+| `/films/[id]/episodes/[number]` | `src/app/films/[id]/episodes/[number]/page.tsx` | server component awaits `params`, client panel | `FilmEpisodePanel` (loads the project, then the episode by the id its `episodes` give `number`) in `FilmStudioTemplate` — on a direct load or reload only |
+| `/films/[id]/episodes/[number]` from `/films/[id]` | `src/app/films/[id]/@modal/(.)episodes/[number]/page.tsx` | intercepting route in the `modal` slot of `src/app/films/[id]/layout.tsx`; `@modal/default.tsx` and `@modal/page.tsx` render nothing | `FilmEpisodePopup` — `FilmEpisodePanel` with `onClose` in a `<dialog>` over the project page; closes with `router.back()` |
 | `/films/library` | `src/app/films/library/page.tsx` | server component awaits `searchParams.tab`, client manager | `FilmLibraryManager` (`Characters` / `Styles` / `Voices`) in `FilmStudioTemplate` |
 | `/settings` | `src/app/settings/page.tsx` | server component awaits `searchParams.tab`, `searchParams.id` and `searchParams.provider`, client manager | `SettingsManager` (`General` → `GeneralSettingsForm` + `ProviderSettingsPanel` with one `ProviderCard` sub-tab per provider, `AI models` → `AiModelsSettingsForm`, `Prompt override` → `PromptPresetManager` with list, editor, history, `Film Clone` → `FilmCloneSettingsForm`, `Film Studio` → `FilmStudioSettingsForm`) in `SettingsTemplate` |
 
@@ -40,7 +41,8 @@ organism ─▶ useXxxQuery / useXxxMutation (features/jobs/queries.ts)
   it. Clone frames come from `GET /jobs/{id}/files/…`, generated references and scene images from
   `GET /film-clones/files/…`.
 - Film Studio: the project detail polls every 3 s while an episode is `running` or a cast reference is
-  `queued` / `processing`; the episode detail while it is `running` or has `openRequests`. Images, clips,
+  `queued` / `processing`; the episode detail while it is `running`, has `openRequests` or a part has an
+  `openRequestCount`; an open part's detail while the episode is busy or it has `openRequests`. Images, clips,
   audio and the film come from `GET /films/files/…` (`buildFilmFileUrl`, versioned by `updatedAt`),
   downloads from `GET /films/episodes/{id}/download?file=…`. Episode creation sends `X-Captcha-Token`.
 

@@ -17,7 +17,9 @@ export const FILMS_LIBRARY_PATH = "/films/library";
 export const FILM_STUDIO_REFRESH_INTERVAL_MS = 3_000;
 
 export const EPISODE_STEPS: readonly EpisodeStep[] = [
+  "writing_outline",
   "writing_script",
+  "updating_story_bible",
   "generating_references",
   "generating_scene_images",
   "generating_clips",
@@ -26,7 +28,9 @@ export const EPISODE_STEPS: readonly EpisodeStep[] = [
 ];
 
 export const EPISODE_STEP_LABELS: Record<EpisodeStep, string> = {
+  writing_outline: "Writing outline",
   writing_script: "Writing script",
+  updating_story_bible: "Updating story bible",
   generating_references: "Generating reference images",
   generating_scene_images: "Generating scene images",
   generating_clips: "Generating clips",
@@ -80,6 +84,9 @@ export const CLIP_DURATION_OPTIONS = [
   { value: "6", label: "6 s" },
   { value: "8", label: "8 s" },
   { value: "10", label: "10 s" },
+  { value: "15", label: "15 s" },
+  { value: "20", label: "20 s" },
+  { value: "30", label: "30 s" },
 ] as const;
 
 export type ClipDurationValue = (typeof CLIP_DURATION_OPTIONS)[number]["value"];
@@ -143,20 +150,23 @@ export interface StopPointField {
 }
 
 export const STOP_POINT_FIELDS: readonly StopPointField[] = [
+  { key: "afterOutline", label: "Outline" },
   { key: "afterScript", label: "Script" },
   { key: "afterReferences", label: "Reference images" },
   { key: "afterSceneImages", label: "Scene images" },
 ];
 
 export const DEFAULT_STOP_POINTS: StopPoints = {
+  afterOutline: false,
   afterScript: false,
   afterReferences: false,
   afterSceneImages: true,
 };
 
 export const TARGET_DURATION_LOWER_LIMIT_S = 8;
-export const TARGET_DURATION_UPPER_LIMIT_S = 600;
 export const DEFAULT_TARGET_DURATION_S = 60;
+export const PART_DURATION_LOWER_LIMIT_S = 8;
+export const PART_DURATION_UPPER_LIMIT_S = 600;
 export const SCENE_CLIP_DURATION_LOWER_LIMIT_S = 4;
 export const SCENE_CLIP_DURATION_UPPER_LIMIT_S = 30;
 
@@ -164,6 +174,8 @@ export const PROJECT_NAME_MAX_LENGTH = 100;
 export const PROJECT_DESCRIPTION_MAX_LENGTH = 5_000;
 export const IDEA_MAX_LENGTH = 5_000;
 export const EPISODE_TITLE_MAX_LENGTH = 150;
+export const PART_PLAN_MAX_LENGTH = 5_000;
+export const STORY_BIBLE_MAX_LENGTH = 20_000;
 export const CHARACTER_DESCRIPTION_MAX_LENGTH = 2_000;
 export const IMAGE_PROMPT_MAX_LENGTH = 4_000;
 export const VIDEO_PROMPT_MAX_LENGTH = 4_000;
@@ -186,6 +198,17 @@ export type LibraryTab = (typeof LIBRARY_TAB_OPTIONS)[number]["value"];
 
 export const DEFAULT_LIBRARY_TAB: LibraryTab = "characters";
 
+export const PROJECT_TAB_OPTIONS = [
+  { value: "overview", label: "Overview" },
+  { value: "story-bible", label: "Story bible" },
+] as const;
+
+export type ProjectTab = (typeof PROJECT_TAB_OPTIONS)[number]["value"];
+
+export const OVERVIEW_PROJECT_TAB: ProjectTab = "overview";
+export const STORY_BIBLE_PROJECT_TAB: ProjectTab = "story-bible";
+export const DEFAULT_PROJECT_TAB: ProjectTab = OVERVIEW_PROJECT_TAB;
+
 export const SEARCH_BY_NAME_PLACEHOLDER = "Search by name";
 export const ALL_ENTITY_TYPES_VALUE = "all";
 export const ALL_ENTITY_TYPES_LABEL = "All types";
@@ -205,7 +228,12 @@ export const REGENERATE_LABEL = "Regenerate";
 export const PREMISE_HINT = "Sent to the AI model for every episode.";
 export const DEFAULT_CLIP_LENGTH_HINT =
   "For scenes you add or copy from a film clone; the script picks each scene's length.";
-export const TARGET_LENGTH_HINT = `The script picks the number of scenes and each one's length, ${SCENE_CLIP_DURATION_LOWER_LIMIT_S}-${SCENE_CLIP_DURATION_UPPER_LIMIT_S} s.`;
+export const TARGET_LENGTH_HINT = `The outline splits it into parts of up to 10 minutes; the script picks each scene's length, ${SCENE_CLIP_DURATION_LOWER_LIMIT_S}-${SCENE_CLIP_DURATION_UPPER_LIMIT_S} s.`;
+export const SUMMARY_HINT = "Written with the story bible after the script; later episodes read it.";
+export const STORY_BIBLE_HINT =
+  "The AI model reads it for every outline and part, and rewrites it after each episode's script.";
+export const EMPTY_STORY_BIBLE_LABEL = "Empty — written after the first episode's script.";
+export const NOT_WRITTEN_PART_LABEL = "Not written";
 export const LOOK_FIXED_HINT = "Fixed once a scene image exists";
 export const FILM_STUDIO_LANGUAGE_NOTICE = "Film Studio narrates only Vietnamese, English or Japanese.";
 export const SEND_TO_FILM_STUDIO_LABEL = "Send to Film Studio";

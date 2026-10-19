@@ -14,6 +14,7 @@ import {
 } from "@/features/films/constants";
 import type { ScenePromptsDraft } from "@/features/films/types";
 import { haveSameScenePrompts, isValidSceneClipDuration } from "@/features/films/utils";
+import { useUnsavedChangesReport } from "@/lib/unsavedChanges";
 import { CheckboxListField } from "./CheckboxListField";
 import { NumberField } from "./NumberField";
 import { TextAreaField } from "./TextAreaField";
@@ -41,6 +42,8 @@ export function FilmScenePromptsForm({
   const isLocked = isDisabled || isSaving;
   const hasUnsavedChanges = !haveSameScenePrompts(draft, savedDraft);
   const canSave = hasUnsavedChanges && isValidSceneClipDuration(draft.clipDurationS);
+
+  useUnsavedChangesReport(hasUnsavedChanges);
 
   function updateDraft(changes: Partial<ScenePromptsDraft>) {
     setDraft((currentDraft) => ({ ...currentDraft, ...changes }));

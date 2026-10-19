@@ -28,14 +28,20 @@ export function FilmCloneTabs({ clone }: FilmCloneTabsProps) {
   return (
     <div className="flex flex-col gap-4">
       <TabList<CloneTab> label="Clone results" value={selectedTab} tabs={CLONE_TABS} onChange={setSelectedTab} />
-      <CloneTabContent clone={clone} tab={selectedTab} />
+      <CloneTabContent clone={clone} tab={selectedTab} onOpenLocalization={() => setSelectedTab("localization")} />
     </div>
   );
 }
 
-function CloneTabContent({ clone, tab }: { clone: FilmCloneDetail; tab: CloneTab }) {
+interface CloneTabContentProps {
+  clone: FilmCloneDetail;
+  tab: CloneTab;
+  onOpenLocalization: () => void;
+}
+
+function CloneTabContent({ clone, tab, onOpenLocalization }: CloneTabContentProps) {
   if (tab === "localization") return <CloneLocalizationTab clone={clone} />;
-  if (tab === "script") return <CloneScriptTab clone={clone} />;
+  if (tab === "script") return <CloneScriptTab clone={clone} onOpenLocalization={onOpenLocalization} />;
   if (tab === "videoNotes" && clone.videoNotes !== null) {
     return (
       <div className="flex flex-col gap-3">

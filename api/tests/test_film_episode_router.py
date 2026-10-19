@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -12,14 +13,17 @@ from app.modules.films.episode_service import EpisodeDraft, EpisodeService
 from app.modules.films.errors import (
     EpisodeActionNotAllowedError,
     EpisodeNotFoundError,
+    EpisodeRunningError,
     FilmConflictError,
     FilmFileTooLargeError,
     InvalidFilmRequestError,
+    PartNotFoundError,
 )
-from app.modules.films.film_access import EpisodeContext, FilmAccess
+from app.modules.films.film_access import EpisodeContext, FilmAccess, PartContext
 from app.modules.films.http_errors import register_film_error_handlers
 from app.modules.films.models import (
     Episode,
+    EpisodePart,
     EpisodeSource,
     EpisodeStatus,
     EpisodeStep,
@@ -28,19 +32,33 @@ from app.modules.films.models import (
     Scene,
     SubtitleStyle,
 )
+from app.modules.films.part_service import PartDraft, PartService
 from app.modules.films.scene_service import SceneDraft, SceneService
 from app.modules.films.stage_runner import EpisodeStageRunner
-from app.modules.films.views import EpisodeDetail, EpisodeSummary, ThumbnailCandidate
+from app.modules.films.views import (
+    EpisodeDetail,
+    EpisodeSummary,
+    PartCounts,
+    PartDetail,
+    PartSummary,
+    ThumbnailCandidate,
+)
 from app.modules.media_generation.models import (
     GenerationKind,
     GenerationRequest,
     GenerationStatus,
 )
+from app.modules.prompt_presets.prompt_texts import DEFAULT_PRESET_PROMPTS
 from app.modules.providers.provider_catalog import MediaKind
 
 CREATED_AT = datetime(2026, 10, 12, 9, 0, tzinfo=UTC)
 CAPTCHA_HEADERS = {"X-Captcha-Token": "token-1"}
-STOP_POINTS = {"afterScript": True, "afterReferences": False, "afterSceneImages": True}
+STOP_POINTS = {
+    "afterOutline": True,
+    "afterScript": True,
+    "afterReferences": False,
+    "afterSceneImages": True,
+}
 PROJECT = FilmProject(id="p1", name="Test Series", clip_duration_s=8)
 
 
@@ -51,6 +69,7 @@ def build_episode(**values) -> Episode:
         "number": 1,
         "title": "Episode 1",
         "logline": None,
+        "summary": None,
         "source": EpisodeSource.IDEA,
         "idea": "A storm",
         "source_job_id": None,
@@ -66,7 +85,9 @@ def build_episode(**values) -> Episode:
         "music_error": None,
         "preset": {"id": "preset-1", "name": "Default", "version": 3},
         "ai_used": {"writing_script": {"provider": "openai", "model": "gpt-6-luna"}},
+        "film_outline_prompt": "OUTLINE PROMPT",
         "film_script_prompt": "SCRIPT PROMPT",
+        "story_bible_prompt": "BIBLE PROMPT",
         "status": EpisodeStatus.DRAFT,
         "step": None,
         "error_message": None,
@@ -87,6 +108,7 @@ def build_scene() -> Scene:
     return Scene(
         id="s1",
         episode_id="e1",
+        part_id="pt1",
         position=0,
         image_prompt="Mai stands on the pier",
         video_prompt="0-3s: Mai walks.",
@@ -128,19 +150,51 @@ def build_request() -> GenerationRequest:
     )
 
 
+def build_part() -> EpisodePart:
+    return EpisodePart(
+        id="pt1",
+        episode_id="e1",
+        position=0,
+        title="The Dive",
+        plan="Mai dives.",
+        target_duration_s=60,
+        recap="Mai reached the bell.",
+        created_at=CREATED_AT,
+        updated_at=CREATED_AT,
+    )
+
+
+PART_COUNTS = PartCounts(
+    scene_count=4,
+    images_done=3,
+    clips_done=2,
+    narration_done=1,
+    narration_with_text=5,
+    failed_count=6,
+    open_request_count=7,
+)
+
+
 @pytest.fixture
 def services():
     episode = build_episode()
+    part = build_part()
     episodes = MagicMock(spec=EpisodeService)
     episodes.create_episode.return_value = EpisodeSummary(episode)
     episodes.update_episode.return_value = EpisodeSummary(episode)
     episodes.get_episode_detail.return_value = EpisodeDetail(
         summary=EpisodeSummary(build_episode(source=EpisodeSource.FILM_ANALYSIS)),
         project=PROJECT,
-        scenes=[build_scene()],
+        parts=[PartSummary(part, PART_COUNTS)],
         open_requests=[build_request()],
         thumbnail_candidates=[ThumbnailCandidate(1, GenerationStatus.FAILED, None, "Blocked")],
         is_source_deleted=True,
+    )
+    parts = MagicMock(spec=PartService)
+    parts.add_part.return_value = part
+    parts.update_part.return_value = part
+    parts.get_part_detail.return_value = PartDetail(
+        part=part, scenes=[build_scene()], open_requests=[build_request()]
     )
     scenes = MagicMock(spec=SceneService)
     scenes.add_scene.return_value = build_scene()
@@ -150,14 +204,24 @@ def services():
         getattr(scenes, method).return_value = build_request()
     stage_runner = MagicMock(spec=EpisodeStageRunner)
     running = build_episode(status=EpisodeStatus.RUNNING, step=EpisodeStep.WRITING_SCRIPT)
-    for method in ("start", "continue_episode", "stop", "resume", "assemble", "rewrite_script"):
+    for method in (
+        "start",
+        "continue_episode",
+        "stop",
+        "resume",
+        "assemble",
+        "rewrite_script",
+        "rewrite_part",
+    ):
         getattr(stage_runner, method).return_value = running
     access = MagicMock(spec=FilmAccess)
     access.get_episode.return_value = EpisodeContext(project=PROJECT, episode=episode)
+    access.get_part.return_value = PartContext(project=PROJECT, episode=episode, part=part)
     captcha_service = MagicMock(spec=CaptchaService)
     captcha_service.verify.return_value = True
     return SimpleNamespace(
         episodes=episodes,
+        parts=parts,
         scenes=scenes,
         stage_runner=stage_runner,
         access=access,
@@ -172,6 +236,7 @@ def client(services):
     register_film_error_handlers(app)
     app.state.container = SimpleNamespace(
         film_episode_service=services.episodes,
+        film_part_service=services.parts,
         film_scene_service=services.scenes,
         film_stage_runner=services.stage_runner,
         film_access=services.access,
@@ -188,7 +253,7 @@ def created_response(client):
             "source": "idea",
             "idea": "A storm",
             "targetDurationS": 16,
-            "stopPoints": {"afterScript": True, "afterReferences": False},
+            "stopPoints": {"afterOutline": True, "afterScript": True, "afterReferences": False},
             "subtitleStyle": "cyber_amber",
             "presetId": "preset-1",
         },
@@ -264,7 +329,7 @@ def detail_response(client):
     return client.get("/films/episodes/e1")
 
 
-def test_the_detail_holds_scenes_requests_and_candidates(detail_response):
+def test_the_detail_holds_parts_requests_and_candidates_but_no_scenes(detail_response):
     body = detail_response.json()
     assert (
         detail_response.status_code,
@@ -273,9 +338,10 @@ def test_the_detail_holds_scenes_requests_and_candidates(detail_response):
         body["filmScriptPrompt"],
         body["aiUsed"],
         body["isSourceDeleted"],
-        [scene["id"] for scene in body["scenes"]],
+        [part["id"] for part in body["parts"]],
         [request["id"] for request in body["openRequests"]],
         body["thumbnailCandidates"],
+        "scenes" in body,
     ) == (
         200,
         "film_analysis",
@@ -283,10 +349,58 @@ def test_the_detail_holds_scenes_requests_and_candidates(detail_response):
         "SCRIPT PROMPT",
         {"writing_script": {"provider": "openai", "model": "gpt-6-luna", "label": "GPT-6 Luna"}},
         True,
-        ["s1"],
+        ["pt1"],
         ["r1"],
         [{"candidate": 1, "status": "failed", "path": None, "errorMessage": "Blocked"}],
+        False,
     )
+
+
+def test_each_part_of_the_detail_carries_its_counters_in_camel_case(detail_response):
+    part = detail_response.json()["parts"][0]
+    assert (
+        part["episodeId"],
+        part["position"],
+        part["title"],
+        part["plan"],
+        part["targetDurationS"],
+        part["recap"],
+        part["sceneCount"],
+        part["imagesDone"],
+        part["clipsDone"],
+        part["narrationDone"],
+        part["narrationWithText"],
+        part["failedCount"],
+        part["openRequestCount"],
+    ) == ("e1", 0, "The Dive", "Mai dives.", 60, "Mai reached the bell.", 4, 3, 2, 1, 5, 6, 7)
+
+
+@pytest.fixture(
+    params=[
+        (
+            {"film_outline_prompt": "OUTLINE PROMPT", "story_bible_prompt": "BIBLE PROMPT"},
+            ("OUTLINE PROMPT", "BIBLE PROMPT"),
+        ),
+        (
+            {"film_outline_prompt": None, "story_bible_prompt": None},
+            (DEFAULT_PRESET_PROMPTS.film_outline, DEFAULT_PRESET_PROMPTS.story_bible),
+        ),
+    ]
+)
+def detail_prompts(request, client, services):
+    episode_values, expected = request.param
+    detail = services.episodes.get_episode_detail.return_value
+    services.episodes.get_episode_detail.return_value = replace(
+        detail, summary=EpisodeSummary(build_episode(**episode_values))
+    )
+    body = client.get("/films/episodes/e1").json()
+    return SimpleNamespace(
+        actual=(body["filmOutlinePrompt"], body["storyBiblePrompt"]), expected=expected
+    )
+
+
+def test_the_detail_shows_the_outline_and_bible_prompts_or_the_defaults(detail_prompts):
+    assert detail_prompts.actual == detail_prompts.expected
 
 
 @pytest.fixture
@@ -308,6 +422,7 @@ def test_an_episode_edit_passes_only_the_sent_fields(patched_response, services)
             "title": "New title",
             "music_prompt": None,
             "stop_points": {
+                "afterOutline": False,
                 "afterScript": True,
                 "afterReferences": False,
                 "afterSceneImages": True,
@@ -324,6 +439,26 @@ def thumbnail_only_patch(client, services):
 
 def test_an_edit_without_stop_points_passes_only_the_sent_field(thumbnail_only_patch):
     assert thumbnail_only_patch == ("e1", {"thumbnail_prompt": "A bell in fog"})
+
+
+@pytest.fixture
+def summary_patch(client, services):
+    services.episodes.update_episode.return_value = EpisodeSummary(
+        build_episode(summary="Mai finds the bell.")
+    )
+    response = client.patch("/films/episodes/e1", json={"summary": "Mai finds the bell."})
+    return SimpleNamespace(response=response, call=services.episodes.update_episode.call_args)
+
+
+def test_a_summary_edit_passes_the_summary(summary_patch):
+    assert summary_patch.call.args == ("e1", {"summary": "Mai finds the bell."})
+
+
+def test_a_summary_edit_answers_the_episode_with_its_summary(summary_patch):
+    assert (summary_patch.response.status_code, summary_patch.response.json()["summary"]) == (
+        200,
+        "Mai finds the bell.",
+    )
 
 
 @pytest.fixture
@@ -385,11 +520,190 @@ def test_a_refused_action_answers_409(refused_action_response):
     )
 
 
+PART_BODY = {"title": "The Dive", "plan": "Mai dives.", "targetDurationS": 60}
+
+
+@pytest.fixture
+def added_part_response(client):
+    return client.post("/films/episodes/e1/parts", json={"afterPosition": -1, **PART_BODY})
+
+
+def test_adding_a_part_answers_201_with_the_part(added_part_response):
+    body = added_part_response.json()
+    assert (
+        added_part_response.status_code,
+        body["id"],
+        body["episodeId"],
+        body["position"],
+        body["title"],
+        body["plan"],
+        body["targetDurationS"],
+        body["recap"],
+    ) == (201, "pt1", "e1", 0, "The Dive", "Mai dives.", 60, "Mai reached the bell.")
+
+
+@pytest.fixture(params=[({"afterPosition": -1}, -1), ({"afterPosition": 2}, 2), ({}, None)])
+def added_part_draft(request, client, services):
+    position_values, after_position = request.param
+    client.post("/films/episodes/e1/parts", json={**position_values, **PART_BODY})
+    return SimpleNamespace(
+        actual=services.parts.add_part.call_args.args,
+        expected=(
+            "e1",
+            PartDraft(
+                after_position=after_position,
+                title="The Dive",
+                plan="Mai dives.",
+                target_duration_s=60,
+            ),
+        ),
+    )
+
+
+def test_adding_a_part_passes_the_body_as_a_draft(added_part_draft):
+    assert added_part_draft.actual == added_part_draft.expected
+
+
+@pytest.fixture
+def part_detail_response(client, services):
+    response = client.get("/films/parts/pt1")
+    return SimpleNamespace(response=response, call=services.parts.get_part_detail.call_args)
+
+
+def test_the_part_detail_holds_its_scenes_and_their_open_requests(part_detail_response):
+    body = part_detail_response.response.json()
+    assert (
+        part_detail_response.response.status_code,
+        part_detail_response.call.args,
+        body["id"],
+        body["targetDurationS"],
+        [(scene["id"], scene["partId"]) for scene in body["scenes"]],
+        [request["id"] for request in body["openRequests"]],
+    ) == (200, ("pt1",), "pt1", 60, [("s1", "pt1")], ["r1"])
+
+
+@pytest.fixture
+def patched_part_response(client, services):
+    response = client.patch(
+        "/films/parts/pt1", json={"title": "The Deep", "targetDurationS": 90, "position": 2}
+    )
+    return SimpleNamespace(response=response, call=services.parts.update_part.call_args)
+
+
+def test_a_part_edit_passes_only_the_sent_fields(patched_part_response):
+    assert patched_part_response.call.args == (
+        "pt1",
+        {"title": "The Deep", "target_duration_s": 90, "position": 2},
+    )
+
+
+def test_a_part_edit_answers_the_part(patched_part_response):
+    assert (
+        patched_part_response.response.status_code,
+        patched_part_response.response.json()["id"],
+    ) == (200, "pt1")
+
+
+@pytest.fixture
+def deleted_part_response(client, services):
+    response = client.delete("/films/parts/pt1")
+    return SimpleNamespace(response=response, call=services.parts.delete_part.call_args)
+
+
+def test_deleting_a_part_answers_204(deleted_part_response):
+    assert (deleted_part_response.response.status_code, deleted_part_response.call.args) == (
+        204,
+        ("pt1",),
+    )
+
+
+@pytest.fixture
+def rewritten_part_response(client, services):
+    response = client.post("/films/parts/pt1/rewrite")
+    return SimpleNamespace(
+        response=response,
+        access_calls=services.access.get_part.call_args_list,
+        rewrite_calls=services.stage_runner.rewrite_part.call_args_list,
+        context=services.access.get_part.return_value,
+    )
+
+
+def test_rewriting_a_part_answers_the_running_episode(rewritten_part_response):
+    body = rewritten_part_response.response.json()
+    assert (rewritten_part_response.response.status_code, body["status"], body["step"]) == (
+        200,
+        "running",
+        "writing_script",
+    )
+
+
+def test_rewriting_a_part_runs_the_stage_runner_on_the_part_context(rewritten_part_response):
+    assert (
+        [call.args for call in rewritten_part_response.access_calls],
+        [call.args for call in rewritten_part_response.rewrite_calls],
+    ) == ([("pt1",)], [(rewritten_part_response.context,)])
+
+
+@pytest.fixture(
+    params=[
+        (
+            ("post", "/films/episodes/e1/parts", PART_BODY),
+            ("parts", "add_part"),
+            EpisodeRunningError(1),
+            409,
+        ),
+        (
+            ("get", "/films/parts/pt9", None),
+            ("parts", "get_part_detail"),
+            PartNotFoundError("pt9"),
+            404,
+        ),
+        (
+            ("patch", "/films/parts/pt1", {"position": 5}),
+            ("parts", "update_part"),
+            InvalidFilmRequestError("Position must be between 0 and 2"),
+            400,
+        ),
+        (
+            ("delete", "/films/parts/pt1", None),
+            ("parts", "delete_part"),
+            FilmConflictError("Part 1 has scenes — delete them first"),
+            409,
+        ),
+        (
+            ("post", "/films/parts/pt9/rewrite", None),
+            ("access", "get_part"),
+            PartNotFoundError("pt9"),
+            404,
+        ),
+        (
+            ("post", "/films/parts/pt1/rewrite", None),
+            ("stage_runner", "rewrite_part"),
+            FilmConflictError("Part 1 already has images or clips — delete them before rewriting"),
+            409,
+        ),
+    ]
+)
+def failed_part_route(request, client, services):
+    (method, path, body), (service_name, method_name), error, status_code = request.param
+    getattr(getattr(services, service_name), method_name).side_effect = error
+    response = client.request(method, path, json=body)
+    return SimpleNamespace(
+        actual=(response.status_code, response.json()),
+        expected=(status_code, {"detail": str(error)}),
+    )
+
+
+def test_part_route_errors_map_to_their_status(failed_part_route):
+    assert failed_part_route.actual == failed_part_route.expected
+
+
 @pytest.fixture
 def added_scene_response(client):
     return client.post(
         "/films/episodes/e1/scenes",
         json={
+            "partId": "pt1",
             "afterPosition": -1,
             "imagePrompt": "Close-up of the bell",
             "videoPrompt": "0-3s: The bell sways.",
@@ -402,15 +716,17 @@ def added_scene_response(client):
 def test_adding_a_scene_answers_201_with_the_scene(added_scene_response):
     assert (
         added_scene_response.status_code,
+        added_scene_response.json()["partId"],
         added_scene_response.json()["trimStartMs"],
         added_scene_response.json()["clipDurationS"],
-    ) == (201, 1000, 12)
+    ) == (201, "pt1", 1000, 12)
 
 
 def test_adding_a_scene_passes_a_draft(added_scene_response, services):
     services.scenes.add_scene.assert_called_once_with(
         "e1",
         SceneDraft(
+            part_id="pt1",
             after_position=-1,
             image_prompt="Close-up of the bell",
             video_prompt="0-3s: The bell sways.",
@@ -419,6 +735,23 @@ def test_adding_a_scene_passes_a_draft(added_scene_response, services):
             clip_duration_s=12,
         ),
     )
+
+
+@pytest.fixture
+def partless_scene_response(client, services):
+    response = client.post(
+        "/films/episodes/e1/scenes",
+        json={"imagePrompt": "Close-up of the bell", "videoPrompt": "0-3s: The bell sways."},
+    )
+    return SimpleNamespace(response=response, is_called=services.scenes.add_scene.called)
+
+
+def test_adding_a_scene_without_a_part_is_refused(partless_scene_response):
+    assert (
+        partless_scene_response.response.status_code,
+        partless_scene_response.response.json()["detail"][0]["loc"],
+        partless_scene_response.is_called,
+    ) == (422, ["body", "partId"], False)
 
 
 @pytest.fixture

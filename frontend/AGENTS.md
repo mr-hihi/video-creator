@@ -18,7 +18,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 Next.js 16 App Router UI (Node 24, npm) for video-tool, with the menus Video to Markdown (upload or
 YouTube link, follow the job, preview the Markdown, download the `.zip`), Film Analysis (character and scene
 prompts with copy, rerun, delete), Film Clone (assets, shots, localization, script and scene images),
-Film Studio (projects, character / style / voice library, episodes with scenes, clips, narration and the assembled film),
+Film Studio (projects with a story bible, character / style / voice library, episodes outlined in parts of scenes, clips, narration and the assembled film),
 and Settings (script language and provider connections, AI models with the media routes and models, prompt
 presets — edit, version, import / export — and the Film Clone and Film Studio media providers).
 Desktop-first, responsive down to phone width. Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

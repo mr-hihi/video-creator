@@ -27,6 +27,7 @@ from app.modules.films.film_prompts import to_project_aspect
 from app.modules.films.models import (
     Character,
     EntityType,
+    EpisodePart,
     FilmProject,
     MediaStatus,
     ReferenceSource,
@@ -34,10 +35,12 @@ from app.modules.films.models import (
     SceneImageSource,
     Style,
 )
+from app.modules.films.part_rules import MAX_PART_SCENES, to_part_number
 from app.modules.films.repository import FilmRepository
 from app.modules.films.scene_resets import DEFAULT_TRIM_START_MS
 from app.modules.films.scene_rules import SCENE_PROMPT_LIMIT
 from app.modules.films.style_service import get_known_style
+from app.modules.films.views import CUT_HEAD_S
 from app.modules.jobs.storage import JobStorage
 
 SOURCE_CLONE_REQUIRED_MESSAGE = "sourceCloneId is required for a film clone source"
@@ -48,6 +51,8 @@ LANGUAGE_MISMATCH_MESSAGE = (
 )
 ASPECT_MISMATCH_MESSAGE = "The clone's images are {aspect}; the project is {orientation}"
 DIALOGUE_LINE = "Dialogue: {dialogue}"
+CLONE_PART_TITLE = "Part {number}"
+CLONE_PART_PLAN = "Scenes {first}-{last} of the film clone."
 ENTITY_TYPES_BY_ASSET_KIND = {
     AssetKind.CHARACTER: EntityType.CHARACTER,
     AssetKind.COSTUME: EntityType.VISUAL_ASSET,
@@ -76,6 +81,7 @@ class CloneImportTarget:
 class CloneImport:
     new_characters: tuple[Character, ...]
     linked_character_ids: tuple[str, ...]
+    parts: tuple[EpisodePart, ...]
     scenes: tuple[Scene, ...]
     file_copies: tuple[FileCopy, ...]
 
@@ -88,16 +94,36 @@ class _ImportPlan:
     new_characters: list[Character] = field(default_factory=list)
     linked_character_ids: list[str] = field(default_factory=list)
     scenes: list[Scene] = field(default_factory=list)
+    part_ids: list[str] = field(default_factory=list)
     file_copies: list[FileCopy] = field(default_factory=list)
     character_ids_by_name: dict[str, str] = field(default_factory=dict)
     character_ids_by_asset_id: dict[str, str] = field(default_factory=dict)
+
+    def next_scene_part_id(self) -> str:
+        if len(self.scenes) == len(self.part_ids) * MAX_PART_SCENES:
+            self.part_ids.append(str(uuid4()))
+        return self.part_ids[-1]
 
     def to_import(self) -> CloneImport:
         return CloneImport(
             new_characters=tuple(self.new_characters),
             linked_character_ids=tuple(self.linked_character_ids),
+            parts=tuple(self._to_part(position) for position in range(len(self.part_ids))),
             scenes=tuple(self.scenes),
             file_copies=tuple(self.file_copies),
+        )
+
+    def _to_part(self, position: int) -> EpisodePart:
+        first = position * MAX_PART_SCENES
+        scene_count = len(self.scenes[first : first + MAX_PART_SCENES])
+        return EpisodePart(
+            id=self.part_ids[position],
+            episode_id=self.target.episode_id,
+            position=position,
+            title=CLONE_PART_TITLE.format(number=to_part_number(position)),
+            plan=CLONE_PART_PLAN.format(first=first + 1, last=first + scene_count),
+            target_duration_s=scene_count * (self.target.project.clip_duration_s - CUT_HEAD_S),
+            recap=None,
         )
 
 
@@ -209,11 +235,13 @@ class CloneSource:
             for asset_id in clone_scene.asset_ids
             if asset_id in plan.character_ids_by_asset_id
         ]
+        part_id = plan.next_scene_part_id()
         plan.scenes.append(
             Scene(
                 id=scene_id,
                 episode_id=plan.target.episode_id,
-                position=len(plan.scenes),
+                part_id=part_id,
+                position=len(plan.scenes) % MAX_PART_SCENES,
                 image_prompt=clone_scene.image_prompt[:SCENE_PROMPT_LIMIT],
                 video_prompt=to_video_prompt(clone_scene),
                 narrator_text=None,

@@ -4,6 +4,7 @@ from functools import partial
 from typing import Any
 from uuid import uuid4
 
+from app.db import utc_now
 from app.modules.films.character_service import ensure_reference_idle
 from app.modules.films.errors import FilmConflictError, InvalidFilmRequestError
 from app.modules.films.field_rules import (
@@ -20,6 +21,7 @@ from app.modules.films.media_queue import FilmMediaQueue
 from app.modules.films.models import (
     MISSING_MEDIA_STATUSES,
     Character,
+    EpisodeStep,
     FilmLanguage,
     FilmProject,
     MediaStatus,
@@ -27,6 +29,7 @@ from app.modules.films.models import (
     ProjectStatus,
 )
 from app.modules.films.repository import FilmRepository
+from app.modules.films.story_rules import to_valid_story_bible
 from app.modules.films.style_service import get_known_style
 from app.modules.films.views import EpisodeSummary, ProjectDetail, ProjectSummary
 from app.modules.media_generation.models import GenerationRequest
@@ -34,13 +37,13 @@ from app.modules.media_generation.models import GenerationRequest
 PROJECT_NAME_LIMIT = 100
 PROJECT_DESCRIPTION_LIMIT = 5000
 EDIT_PROMPT_LIMIT = 2000
-CLIP_DURATIONS_S = frozenset({4, 6, 8, 10})
+CLIP_DURATIONS_S = frozenset({4, 6, 8, 10, 15, 20, 30})
 NEW_PROJECT_EPISODE_NUMBER = 0
 LOOK_FIELDS = ("orientation", "style_id")
 PROJECT_NAME_MESSAGE = f"Project name must be 1-{PROJECT_NAME_LIMIT} characters"
 PROJECT_DESCRIPTION_MESSAGE = f"Description must be at most {PROJECT_DESCRIPTION_LIMIT} characters"
 EDIT_PROMPT_MESSAGE = f"Edit prompt must be 1-{EDIT_PROMPT_LIMIT} characters"
-CLIP_DURATION_MESSAGE = "Clip length must be 4, 6, 8 or 10 seconds"
+CLIP_DURATION_MESSAGE = "Clip length must be 4, 6, 8, 10, 15, 20 or 30 seconds"
 DUPLICATE_PROJECT_MESSAGE = "A project named '{name}' already exists"
 UNKNOWN_VOICE_MESSAGE = "Voice {voice_id} not found"
 UNKNOWN_CHARACTER_MESSAGE = "Character {character_id} not found"
@@ -49,6 +52,9 @@ PROJECT_GENERATION_RUNNING_MESSAGE = "Film project {project_id} has generation r
 CHARACTER_IN_SCENES_MESSAGE = "Character '{name}' appears in {count} scene(s) of this project"
 CHARACTER_NOT_IN_PROJECT_MESSAGE = "Character '{name}' is not in this project"
 NO_REFERENCE_MESSAGE = "Character '{name}' has no reference image to edit"
+STORY_BIBLE_BUSY_MESSAGE = (
+    "Episode {number} is updating the story bible — try again when it finishes"
+)
 
 
 def to_valid_clip_duration(clip_duration_s: int) -> int:
@@ -97,6 +103,7 @@ class ProjectChanges:
     allow_narration: bool | None = None
     narrator_voice_id: str | None = None
     allow_music: bool | None = None
+    story_bible: str | None = None
 
 
 @dataclass(frozen=True)
@@ -159,6 +166,8 @@ class FilmProjectService:
             values["style_id"] = get_known_style(self._repository, changes.style_id).id
         if changes.narrator_voice_id is not None:
             values["narrator_voice_id"] = self._to_known_voice_id(changes.narrator_voice_id)
+        if changes.story_bible is not None:
+            values.update(self._to_story_bible_values(project, changes.story_bible))
         self._ensure_look_editable(project, values)
         if values:
             self._repository.update_project(project.id, values)
@@ -232,6 +241,23 @@ class FilmProjectService:
             raise FilmConflictError(
                 PROJECT_GENERATION_RUNNING_MESSAGE.format(project_id=project.id)
             )
+
+    def _to_story_bible_values(self, project: FilmProject, story_bible: str) -> dict[str, Any]:
+        valid_story_bible = to_valid_story_bible(story_bible)
+        updating_episodes = [
+            episode
+            for episode in self._repository.find_running_episodes_of_project(project.id)
+            if episode.step is EpisodeStep.UPDATING_STORY_BIBLE
+        ]
+        if updating_episodes:
+            raise FilmConflictError(
+                STORY_BIBLE_BUSY_MESSAGE.format(number=updating_episodes[0].number)
+            )
+        return {
+            "story_bible": valid_story_bible,
+            "story_bible_episode_id": None,
+            "story_bible_updated_at": utc_now(),
+        }
 
     def _ensure_look_editable(self, project: FilmProject, values: dict[str, Any]) -> None:
         is_look_changed = any(

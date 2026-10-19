@@ -20,6 +20,7 @@ from app.modules.films.ffmpeg_assembler import (
 from app.modules.films.film_files import FilmFiles
 from app.modules.films.models import (
     Episode,
+    EpisodePart,
     FilmProject,
     MediaStatus,
     Orientation,
@@ -121,9 +122,14 @@ def build_episode(**values) -> Episode:
     return Episode(**{**defaults, **values})
 
 
+def build_part(number: int) -> EpisodePart:
+    return EpisodePart(id=f"pt{number}", episode_id="e1", position=number - 1)
+
+
 def build_scene(number: int, **values) -> Scene:
     defaults = {
         "id": f"s{number}",
+        "part_id": "pt1",
         "position": number - 1,
         "clip_status": MediaStatus.DONE,
         "clip_path": f"{EPISODE_DIR}/scenes/s{number}/clip.mp4",
@@ -159,6 +165,7 @@ class Scenario:
     scenes: list[Scene]
     media: FakeMedia
     timeout_sec: int = 3600
+    parts: list[EpisodePart] = field(default_factory=lambda: [build_part(1)])
 
 
 def build_media(reports_by_key: dict[str, str], **values) -> FakeMedia:
@@ -175,6 +182,7 @@ def run_assembly(tmp_path: Path, scenario: Scenario) -> SimpleNamespace:
     repository = MagicMock(spec=FilmRepository)
     repository.find_episode.return_value = scenario.episode
     repository.find_project.return_value = scenario.project
+    repository.find_parts.return_value = scenario.parts
     repository.find_scenes.return_value = scenario.scenes
     runner = MagicMock(spec=CommandRunner)
     runner.run.side_effect = scenario.media.run
@@ -357,13 +365,44 @@ def hung_ffmpeg_failure(tmp_path):
 
 
 @pytest.fixture
-def spent_budget_failure(tmp_path):
+def slow_assembly(tmp_path):
     scenario = Scenario(
         project=build_project(),
         episode=build_episode(),
         scenes=tc33_scenes(),
-        media=build_media(TC33_REPORTS, probe_seconds=2.0),
-        timeout_sec=1,
+        media=build_media(TC33_REPORTS, probe_seconds=2.0, ffmpeg_seconds=2.0),
+        timeout_sec=3,
+    )
+    result = run_assembly(tmp_path, scenario).assembler.assemble("e1")
+    return SimpleNamespace(
+        result=result, elapsed_sec=scenario.media.clock.now, timeout_sec=scenario.timeout_sec
+    )
+
+
+@pytest.fixture
+def quick_ffmpeg_failure_after_slow_probes(tmp_path):
+    scenario = Scenario(
+        project=build_project(),
+        episode=build_episode(),
+        scenes=tc33_scenes(),
+        media=build_media(
+            TC33_REPORTS,
+            probe_seconds=2.0,
+            ffmpeg_error=CommandError("ffmpeg-test exited with 1: Broken pipe"),
+        ),
+        timeout_sec=3,
+    )
+    return failed_message(tmp_path, scenario)
+
+
+@pytest.fixture
+def empty_part_failure(tmp_path):
+    scenario = Scenario(
+        project=build_project(),
+        episode=build_episode(),
+        scenes=tc33_scenes(),
+        media=build_media(TC33_REPORTS),
+        parts=[build_part(1), build_part(2)],
     )
     return failed_message(tmp_path, scenario)
 
@@ -492,7 +531,7 @@ def test_assemble_runs_every_command_in_one_temporary_folder_under_the_work_root
     )
 
 
-def test_assemble_gives_every_command_the_whole_remaining_budget(assembled):
+def test_assemble_gives_every_command_the_full_timeout(assembled):
     assert assembled.commands.timeouts_sec == {3600.0}
 
 
@@ -504,10 +543,12 @@ def test_assemble_removes_the_temporary_work_folder(assembled):
     assert assembled.leftover_work == []
 
 
-def test_assemble_mixes_music_and_burns_subtitles_in_the_finish(assembled_with_music_and_burn):
-    assert assembled_with_music_and_burn.commands.finish_args[4:9] == [
+def test_assemble_loops_music_and_burns_subtitles_in_the_finish(assembled_with_music_and_burn):
+    assert assembled_with_music_and_burn.commands.finish_args[4:11] == [
         "-i",
         assembled_with_music_and_burn.joined_path,
+        "-stream_loop",
+        "-1",
         "-i",
         assembled_with_music_and_burn.music_path,
         "-filter_complex",
@@ -517,7 +558,7 @@ def test_assemble_mixes_music_and_burns_subtitles_in_the_finish(assembled_with_m
 def test_assemble_burns_the_chosen_style_and_fades_music_at_the_film_end(
     assembled_with_music_and_burn,
 ):
-    assert assembled_with_music_and_burn.commands.finish_args[9] == (
+    assert assembled_with_music_and_burn.commands.finish_args[11] == (
         "[0:v]subtitles=filename=subtitles.srt:force_style='FontName=Georgia,FontSize=12,"
         "PrimaryColour=&H005CA6C9,OutlineColour=&H00101010,BackColour=&H99000000,BorderStyle=1,"
         "Outline=2.0,Shadow=1.0,MarginL=60,MarginR=60,MarginV=36'[v];"
@@ -588,7 +629,7 @@ def test_assemble_failure_leaves_no_work_folder_and_no_film(ffmpeg_failure):
     assert (ffmpeg_failure.leftover_work, ffmpeg_failure.output_files) == ([], [])
 
 
-def test_assemble_reports_a_command_cut_by_the_budget_as_timed_out(hung_ffmpeg_failure):
+def test_assemble_reports_a_command_cut_by_its_timeout_as_timed_out(hung_ffmpeg_failure):
     assert hung_ffmpeg_failure.message == "Assembly timed out after 1s"
 
 
@@ -596,10 +637,23 @@ def test_assemble_timeout_leaves_no_work_folder(hung_ffmpeg_failure):
     assert hung_ffmpeg_failure.leftover_work == []
 
 
-def test_assemble_stops_before_a_command_once_the_budget_is_spent(spent_budget_failure):
-    assert (spent_budget_failure.message, spent_budget_failure.command_count) == (
-        "Assembly timed out after 1s",
-        1,
+def test_assemble_lets_a_film_take_longer_than_one_command_timeout(slow_assembly):
+    assert slow_assembly.result.duration_ms == 17708
+    assert slow_assembly.elapsed_sec > slow_assembly.timeout_sec
+
+
+def test_assemble_reports_a_quick_ffmpeg_error_after_slow_probes_as_a_failure(
+    quick_ffmpeg_failure_after_slow_probes,
+):
+    assert quick_ffmpeg_failure_after_slow_probes.message == (
+        "Assembly failed: ffmpeg-test exited with 1: Broken pipe"
+    )
+
+
+def test_assemble_names_the_part_without_scenes(empty_part_failure):
+    assert (empty_part_failure.message, empty_part_failure.command_count) == (
+        "Part 2 has no scenes",
+        0,
     )
 
 

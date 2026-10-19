@@ -8,6 +8,7 @@ import { createEmptyScenePromptsDraft, promptsDraftToFields } from "@/features/f
 
 interface NewFilmSceneCardProps {
   episodeId: string;
+  partId: string;
   afterPosition: number | undefined;
   defaultClipDurationS: number;
   castOptions: readonly SelectOption<string>[];
@@ -17,6 +18,7 @@ interface NewFilmSceneCardProps {
 
 export function NewFilmSceneCard({
   episodeId,
+  partId,
   afterPosition,
   defaultClipDurationS,
   castOptions,
@@ -27,7 +29,7 @@ export function NewFilmSceneCard({
 
   function createScene(draft: ScenePromptsDraft) {
     createSceneMutation.mutate(
-      { episodeId, afterPosition, fields: promptsDraftToFields(draft) },
+      { episodeId, partId, afterPosition, fields: promptsDraftToFields(draft) },
       { onSuccess: onClose },
     );
   }

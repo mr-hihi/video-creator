@@ -6,11 +6,12 @@ import { ErrorAlert } from "@/components/atoms/ErrorAlert";
 import { Panel } from "@/components/atoms/Panel";
 import { PlaceholderMessage } from "@/components/atoms/PlaceholderMessage";
 import { SuccessNotice } from "@/components/atoms/SuccessNotice";
-import { PROMPT_PRESETS_DESCRIPTION, UNSAVED_CHANGES_CONFIRMATION } from "@/features/promptPresets/constants";
+import { PROMPT_PRESETS_DESCRIPTION } from "@/features/promptPresets/constants";
 import { usePromptPresetsQuery } from "@/features/promptPresets/queries";
 import { buildPromptPresetsPath, findDefaultPreset } from "@/features/promptPresets/utils";
 import { PROMPT_OVERRIDE_SETTINGS_TAB, PROMPT_PRESETS_FORM_KEY } from "@/features/settings/constants";
 import { buildSettingsPath } from "@/features/settings/utils";
+import { UNSAVED_CHANGES_CONFIRMATION } from "@/lib/unsavedChanges";
 import { PromptPresetEditor } from "./PromptPresetEditor";
 import { PromptPresetList } from "./PromptPresetList";
 

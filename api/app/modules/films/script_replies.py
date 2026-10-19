@@ -1,4 +1,3 @@
-import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -8,9 +7,10 @@ from app.modules.films.character_service import (
     CHARACTER_NAME_LIMIT,
     VOICE_DESCRIPTION_LIMIT,
 )
-from app.modules.films.episode_rules import MAX_SCENES, TITLE_LIMIT, build_default_title
 from app.modules.films.errors import EpisodeStepFailedError
 from app.modules.films.models import EntityType
+from app.modules.films.part_rules import MAX_PART_SCENES, RECAP_LIMIT
+from app.modules.films.reply_values import to_entries, to_seconds_within, to_text
 from app.modules.films.scene_rules import (
     MAX_SCENE_CLIP_DURATION_S,
     MIN_SCENE_CLIP_DURATION_S,
@@ -25,8 +25,7 @@ _NULLABLE_STRING = {"type": ["string", "null"]}
 SCRIPT_REPLY_SCHEMA = {
     "type": "object",
     "properties": {
-        "title": _STRING,
-        "logline": _STRING,
+        "recap": _STRING,
         "characters": {
             "type": "array",
             "items": {
@@ -67,17 +66,14 @@ SCRIPT_REPLY_SCHEMA = {
                 ],
             },
         },
-        "musicPrompt": _STRING,
-        "thumbnailPrompt": _STRING,
     },
-    "required": ["title", "logline", "characters", "scenes", "musicPrompt", "thumbnailPrompt"],
+    "required": ["recap", "characters", "scenes"],
 }
 
 
 @dataclass(frozen=True)
 class ScriptShape:
     default_clip_duration_s: int
-    episode_number: int
     ai_name: str
 
 
@@ -101,26 +97,19 @@ class WrittenScene:
 
 @dataclass(frozen=True)
 class WrittenScript:
-    title: str
-    logline: str | None
+    recap: str | None
     characters: tuple[WrittenCharacter, ...]
     scenes: tuple[WrittenScene, ...]
-    music_prompt: str | None
-    thumbnail_prompt: str | None
 
 
 def normalize_script_reply(reply: Mapping[str, Any], shape: ScriptShape) -> WrittenScript:
-    scenes = _to_scenes(reply, shape.default_clip_duration_s)[:MAX_SCENES]
+    scenes = _to_scenes(reply, shape.default_clip_duration_s)[:MAX_PART_SCENES]
     if not scenes:
         raise EpisodeStepFailedError(NO_SCENES_MESSAGE.format(model=shape.ai_name))
-    title = _text(reply.get("title")) or build_default_title(shape.episode_number)
     return WrittenScript(
-        title=title[:TITLE_LIMIT],
-        logline=_text(reply.get("logline")) or None,
+        recap=to_text(reply.get("recap"))[:RECAP_LIMIT] or None,
         characters=_to_characters(reply),
         scenes=scenes,
-        music_prompt=_text(reply.get("musicPrompt")) or None,
-        thumbnail_prompt=_text(reply.get("thumbnailPrompt")) or None,
     )
 
 
@@ -138,46 +127,44 @@ def to_character_ids(
 def _to_scenes(reply: Mapping[str, Any], default_clip_duration_s: int) -> tuple[WrittenScene, ...]:
     return tuple(
         WrittenScene(
-            image_prompt=_text(entry.get("imagePrompt"))[:SCENE_PROMPT_LIMIT],
-            video_prompt=_text(entry.get("videoPrompt"))[:SCENE_PROMPT_LIMIT],
-            narrator_text=_text(entry.get("narratorText"))[:NARRATION_LIMIT] or None,
+            image_prompt=to_text(entry.get("imagePrompt"))[:SCENE_PROMPT_LIMIT],
+            video_prompt=to_text(entry.get("videoPrompt"))[:SCENE_PROMPT_LIMIT],
+            narrator_text=to_text(entry.get("narratorText"))[:NARRATION_LIMIT] or None,
             character_names=_to_names(entry.get("characterNames")),
-            clip_duration_s=_to_clip_duration_s(entry.get("durationS"), default_clip_duration_s),
+            clip_duration_s=to_seconds_within(
+                entry.get("durationS"),
+                (MIN_SCENE_CLIP_DURATION_S, MAX_SCENE_CLIP_DURATION_S),
+                default_clip_duration_s,
+            ),
         )
-        for entry in _entries(reply, "scenes")
-        if _text(entry.get("imagePrompt")) and _text(entry.get("videoPrompt"))
+        for entry in to_entries(reply, "scenes")
+        if to_text(entry.get("imagePrompt")) and to_text(entry.get("videoPrompt"))
     )
-
-
-def _to_clip_duration_s(value: Any, default_clip_duration_s: int) -> int:
-    if isinstance(value, bool) or not isinstance(value, int | float) or not math.isfinite(value):
-        return default_clip_duration_s
-    return min(max(round(value), MIN_SCENE_CLIP_DURATION_S), MAX_SCENE_CLIP_DURATION_S)
 
 
 def _to_characters(reply: Mapping[str, Any]) -> tuple[WrittenCharacter, ...]:
     characters_by_name: dict[str, WrittenCharacter] = {}
-    for entry in _entries(reply, "characters"):
-        name = _text(entry.get("name"))[:CHARACTER_NAME_LIMIT]
+    for entry in to_entries(reply, "characters"):
+        name = to_text(entry.get("name"))[:CHARACTER_NAME_LIMIT]
         if name and name.casefold() not in characters_by_name:
             characters_by_name[name.casefold()] = _to_character(name, entry)
     return tuple(characters_by_name.values())
 
 
 def _to_character(name: str, entry: Mapping[str, Any]) -> WrittenCharacter:
-    description = _text(entry.get("description")) or name
+    description = to_text(entry.get("description")) or name
     return WrittenCharacter(
         name=name,
         entity_type=_to_entity_type(entry.get("entityType")),
         description=description[:CHARACTER_DESCRIPTION_LIMIT],
-        voice_description=_text(entry.get("voiceDescription"))[:VOICE_DESCRIPTION_LIMIT] or None,
-        reference_frame=_text(entry.get("referenceFrame")) or None,
+        voice_description=to_text(entry.get("voiceDescription"))[:VOICE_DESCRIPTION_LIMIT] or None,
+        reference_frame=to_text(entry.get("referenceFrame")) or None,
     )
 
 
 def _to_entity_type(value: Any) -> EntityType:
     try:
-        return EntityType(_text(value).lower())
+        return EntityType(to_text(value).lower())
     except ValueError:
         return EntityType.CHARACTER
 
@@ -185,15 +172,4 @@ def _to_entity_type(value: Any) -> EntityType:
 def _to_names(raw_names: Any) -> tuple[str, ...]:
     if not isinstance(raw_names, list):
         return ()
-    return tuple(name for name in (_text(raw_name) for raw_name in raw_names) if name)
-
-
-def _entries(reply: Mapping[str, Any], key: str) -> list[Mapping[str, Any]]:
-    entries = reply.get(key)
-    if not isinstance(entries, list):
-        return []
-    return [entry for entry in entries if isinstance(entry, Mapping)]
-
-
-def _text(value: Any) -> str:
-    return value.strip() if isinstance(value, str) else ""
+    return tuple(name for name in (to_text(raw_name) for raw_name in raw_names) if name)

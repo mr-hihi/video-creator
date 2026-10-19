@@ -43,9 +43,6 @@ import type {
   ResolvedMediaProvider,
 } from "./types";
 
-const PRIMARY_MOUSE_BUTTON = 0;
-const SAME_TAB_LINK_TARGETS: ReadonlySet<string> = new Set(["", "_self"]);
-
 export function resolveSettingsTab(requestedTab: string | undefined): SettingsTab {
   const matchingOption = SETTINGS_TAB_OPTIONS.find((option) => option.value === requestedTab);
   return matchingOption?.value ?? DEFAULT_SETTINGS_TAB;
@@ -57,28 +54,6 @@ export function buildSettingsPath(tab: SettingsTab): string {
 
 export function buildProviderSettingsPath(providerId: ProviderId): string {
   return `${buildSettingsPath(GENERAL_SETTINGS_TAB)}&provider=${encodeURIComponent(providerId)}`;
-}
-
-export function updateUnsavedFormKeys(
-  unsavedFormKeys: ReadonlySet<string>,
-  formKey: string,
-  hasUnsavedChanges: boolean,
-): ReadonlySet<string> {
-  if (unsavedFormKeys.has(formKey) === hasUnsavedChanges) return unsavedFormKeys;
-  const nextFormKeys = new Set(unsavedFormKeys);
-  if (hasUnsavedChanges) nextFormKeys.add(formKey);
-  else nextFormKeys.delete(formKey);
-  return nextFormKeys;
-}
-
-export function isInAppNavigationClick(event: MouseEvent): boolean {
-  if (event.button !== PRIMARY_MOUSE_BUTTON || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
-    return false;
-  }
-  const link = event.target instanceof Element ? event.target.closest("a[href]") : null;
-  if (!(link instanceof HTMLAnchorElement) || link.hasAttribute("download")) return false;
-  const isSameTabLink = SAME_TAB_LINK_TARGETS.has(link.target);
-  return isSameTabLink && link.origin === window.location.origin && link.href !== window.location.href;
 }
 
 export function buildSettingsUpdate(settings: AppSettings, draftSettings: Partial<AppSettings>): Partial<AppSettings> {

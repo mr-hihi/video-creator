@@ -39,6 +39,7 @@ AUDIO_CHANNEL_COUNT = 2
 CLIP_SOUND_VOLUME = 0.3
 NARRATION_VOLUME = 1.5
 MUSIC_FADE_OUT_MS = 2000
+LOOP_FOREVER_ARGS = ("-stream_loop", "-1")
 MS_PER_SECOND = 1000
 AUDIO_CODEC_TYPE = "audio"
 PROBE_NO_DURATION_MESSAGE = "ffprobe returned no duration"
@@ -213,7 +214,7 @@ def build_finish_args(finish: FilmFinish) -> list[str]:
 def _to_finish_input_args(finish: FilmFinish) -> list[str]:
     input_args = ["-i", str(finish.joined_path)]
     if finish.music is not None:
-        input_args += ["-i", str(finish.music.music_path)]
+        input_args += [*LOOP_FOREVER_ARGS, "-i", str(finish.music.music_path)]
     return input_args
 
 

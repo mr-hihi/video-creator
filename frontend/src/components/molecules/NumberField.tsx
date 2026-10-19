@@ -7,7 +7,7 @@ interface NumberFieldProps {
   label: string;
   value: string;
   min: number;
-  max: number;
+  max?: number;
   hint?: string;
   isDisabled?: boolean;
   onChange: (value: string) => void;

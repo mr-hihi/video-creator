@@ -147,7 +147,7 @@ so naming the right files is the dispatcher's job.
 
 ## Important Notes
 
-- **Critical** — never start `run.sh start` / `npm run dev` / `uvicorn` from an agent; ask the user to run them, then verify with `curl`.
+- **Critical** — never start the dev stack (`run.sh start` / `npm run dev` / `uvicorn` on 4020 / 4021) from an agent; ask the user to run it, then verify with `curl`. An agent may start the fenced test stack (`sh run.sh start_test`, 5070 / 5071) in the background for E2E checks, reusing one already up, and stops it once the run is recorded.
 - **Critical** — the batch worker lives inside the API process: stopping the API stops batch work, and restarting it requeues interrupted jobs.
 - Run migrations before the first start: `sh run.sh migrate` (dev) / `sh run.sh migrate test`.
 - Whisper needs `brew install whisper-cpp` + `sh run.sh setup_whisper`; AI calls need a logged-in `claude` CLI, or the `google` / `openai` provider key when Settings picks a Gemini / OpenAI model.

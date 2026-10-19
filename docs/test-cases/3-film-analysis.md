@@ -278,9 +278,9 @@ Test cases for [business/3-film-analysis.md](../business/3-film-analysis.md). Ac
   - Right after the restart `GET /jobs/{id}` shows `status` = `pending` or `processing` with `step` = `extracting_audio`
   - The job re-runs every step and ends `done` with exactly one output per tab
 
-## Make a film
+## Send to Film Studio
 
-### TC-FA-21: The `Make a film` panel
+### TC-FA-21: The `Send to Film Studio` button and dialog
 - **App:** Frontend
 - **Precondition:** TC-FA-01 is `done` (`options.language` = `vi`); a film analysis job J `failed`; Film Studio
   project P1 active and project P5 archived. Settings `filmStudioImageProvider` and `filmStudioClipProvider` at
@@ -288,26 +288,33 @@ Test cases for [business/3-film-analysis.md](../business/3-film-analysis.md). Ac
 - **Steps:**
   1. Navigate to `/film-analysis/{J id}`
   2. Navigate to `/film-analysis/{TC-FA-01 id}`
-  3. Select `Test Series` from `Project`
-  4. Click `Change` on the media line
+  3. Click `Send to Film Studio` in the header
+  4. Select `Test Series` from `Project`; fill `Target length` with `30`
+  5. Click `Cancel`, then click `Send to Film Studio` in the header
+  6. Press `Esc`
+  7. Click `Send to Film Studio` in the header; click `Change` on the media line
 - **Expected:**
-  1. No `Make a film` panel
-  2. The panel shows `Project` = `New project`, with `Test Series` in the list and no `Old Series`;
-     `Project name` = `30 Năm Kinh Nghiệm Đầu Tư Gói Gọn Trong Video Này_ _vfjegxHDOwI`; `Language` = `Vietnamese`;
-     `Frame` = `Landscape 16:9`, `Style` = `Photorealistic`; no `Images with` or `Clips with` field — the line
-     `Images with: Google Flow · Clips with: Google Flow` with a link `Change` → `/settings?tab=film-studio`;
-     `Target length` = 60
-  3. `Project name`, `Frame`, `Style` and `Language` are hidden; the media line stays
-  4. URL becomes `/settings?tab=film-studio`; tab `Film Studio` is open
+  1. The header shows the status badge, `Send to Film Studio` (disabled) and `Delete`, in that order
+  2. The header shows the status badge, `Send to Film Studio` (enabled) and `Delete`, in that order; the page has
+     no `Send to Film Studio` panel
+  3. Dialog `Send to Film Studio` opens with `Project` = `New project`, with `Test Series` in the list and no
+     `Old Series`; `Project name` = `30 Năm Kinh Nghiệm Đầu Tư Gói Gọn Trong Video Này_ _vfjegxHDOwI`;
+     `Language` = `Vietnamese`; `Frame` = `Landscape 16:9`, `Style` = `Photorealistic`; no `Images with` or
+     `Clips with` field — the line `Images with: Google Flow · Clips with: Google Flow` with a link `Change` →
+     `/settings?tab=film-studio`; `Target length` = 60; buttons `Send to Film Studio` and `Cancel`
+  4. `Project name`, `Frame`, `Style` and `Language` are hidden; the media line stays
+  5. The dialog closes; reopened, it shows `Project` = `New project` and `Target length` = 60
+  6. The dialog closes; URL stays `/film-analysis/{TC-FA-01 id}`
+  7. URL becomes `/settings?tab=film-studio`; tab `Film Studio` is open
 
-### TC-FA-22: Make a film in a new project
+### TC-FA-22: Send to a new project
 - **App:** Frontend *(real provider)*
 - **Precondition:** TC-FA-01 is `done`.
 - **Steps:**
   1. Navigate to `/film-analysis/{TC-FA-01 id}`
-  2. In `Make a film`, keep `New project`; fill `Project name` with `Sequel Test`; fill `Target length` with `16`;
-     fill `Extra direction` with `Set it in winter`
-  3. *(captcha on)* Wait for the captcha; click `Make a film`
+  2. Click `Send to Film Studio` in the header; in the dialog keep `New project`; fill `Project name` with
+     `Sequel Test`; fill `Target length` with `16`; fill `Extra direction` with `Set it in winter`
+  3. *(captcha on)* Wait for the captcha; click `Send to Film Studio` in the dialog
   4. As soon as the episode page opens, click `Stop`
 - **Expected:**
   - URL becomes `/films/{new project id}/episodes/1`; the status was `running` before step 4
@@ -315,13 +322,14 @@ Test cases for [business/3-film-analysis.md](../business/3-film-analysis.md). Ac
   - `GET /films/episodes/{id}` → `source` = `film_analysis`, `sourceJobId` = TC-FA-01's id, `idea` = `Set it in winter`
   - `/films` lists `Sequel Test`
 
-### TC-FA-23: Make a film in an existing project
+### TC-FA-23: Send to an existing project
 - **App:** Frontend *(real provider)*
 - **Precondition:** TC-FA-01 is `done`; P1 has episodes with `lastEpisodeNumber` = 2.
 - **Steps:**
   1. Navigate to `/film-analysis/{TC-FA-01 id}`
-  2. Select `Test Series` from `Project`; fill `Target length` with `16`
-  3. *(captcha on)* Wait for the captcha; click `Make a film`; click `Stop` as soon as the episode page opens
+  2. Click `Send to Film Studio` in the header; select `Test Series` from `Project`; fill `Target length` with `16`
+  3. *(captcha on)* Wait for the captcha; click `Send to Film Studio` in the dialog; click `Stop` as soon as the
+     episode page opens
 - **Expected:**
   - URL becomes `/films/{P1}/episodes/3`
   - No new Film Studio project exists

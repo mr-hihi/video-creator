@@ -6,12 +6,12 @@ import { ErrorAlert } from "@/components/atoms/ErrorAlert";
 import { Panel } from "@/components/atoms/Panel";
 import { PlaceholderMessage } from "@/components/atoms/PlaceholderMessage";
 import { TabList } from "@/components/atoms/TabList";
-import { UNSAVED_CHANGES_CONFIRMATION } from "@/features/promptPresets/constants";
 import { PROVIDER_REFRESH_INTERVAL_MS, SECRET_KEY_MISSING_NOTICE } from "@/features/providers/constants";
 import { useProviderSettingsQuery } from "@/features/providers/queries";
 import type { ProviderId } from "@/features/providers/types";
 import { resolveSelectedProvider } from "@/features/providers/utils";
 import { buildProviderSettingsPath } from "@/features/settings/utils";
+import { UNSAVED_CHANGES_CONFIRMATION } from "@/lib/unsavedChanges";
 import { ProviderCard } from "./ProviderCard";
 
 interface ProviderSettingsPanelProps {

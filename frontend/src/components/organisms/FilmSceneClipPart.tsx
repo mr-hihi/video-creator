@@ -18,26 +18,39 @@ import {
   findQueuedRequest,
   findSceneSegmentLabel,
   findSettledMediaError,
+  hasChangedFields,
+  pickChangedFields,
   sceneToTrimDraft,
   secondsTextToMs,
-  toSceneNumber,
 } from "@/features/films/utils";
 import { MISSING_OUTPUT_MESSAGE } from "@/features/jobs/constants";
+import { useUnsavedChangesReport } from "@/lib/unsavedChanges";
 import { FilmCancelRequestButton } from "./FilmCancelRequestButton";
 
 interface FilmSceneClipPartProps {
   scene: Scene;
+  sceneNumber: number;
   openRequests: readonly GenerationRequest[];
   orientation: Orientation;
   isLocked: boolean;
   isSceneBusy: boolean;
 }
 
-export function FilmSceneClipPart({ scene, openRequests, orientation, isLocked, isSceneBusy }: FilmSceneClipPartProps) {
+export function FilmSceneClipPart({
+  scene,
+  sceneNumber,
+  openRequests,
+  orientation,
+  isLocked,
+  isSceneBusy,
+}: FilmSceneClipPartProps) {
   const generateClipMutation = useGenerateSceneMediaMutation();
   const [trimDraft, setTrimDraft] = useState<TrimDraft>();
+  const hasUnsavedTrim = trimDraft !== undefined && hasChangedFields(pickChangedFields(trimDraft, sceneToTrimDraft(scene)));
 
-  const clipLabel = `Scene ${toSceneNumber(scene)} clip`;
+  useUnsavedChangesReport(hasUnsavedTrim);
+
+  const clipLabel = `Scene ${sceneNumber} clip`;
   const busyLabel = describeBusyMedia(scene.clipStatus);
   const statusParts = [busyLabel, findSceneSegmentLabel(scene.id, openRequests)].filter(Boolean);
   const isActionLocked = isLocked || isSceneBusy || generateClipMutation.isPending;

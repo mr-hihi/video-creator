@@ -5,14 +5,14 @@ import { Button } from "@/components/atoms/Button";
 import { ErrorAlert } from "@/components/atoms/ErrorAlert";
 import type { SelectOption } from "@/components/atoms/Select";
 import { FilmScenePromptsForm } from "@/components/molecules/FilmScenePromptsForm";
+import type { GenerationRequest } from "@/features/filmClones/types";
 import { useDeleteFilmSceneMutation, useUpdateFilmSceneMutation } from "@/features/films/queries";
-import type { EpisodeDetail, FilmProjectDetail, Scene, ScenePromptsDraft } from "@/features/films/types";
+import type { FilmProjectDetail, Scene, ScenePromptsDraft } from "@/features/films/types";
 import {
   buildDeleteSceneConfirmation,
   buildScenePromptChanges,
   isSceneBusy,
   sceneToPromptsDraft,
-  toSceneNumber,
 } from "@/features/films/utils";
 import { FilmSceneClipPart } from "./FilmSceneClipPart";
 import { FilmSceneImagePart } from "./FilmSceneImagePart";
@@ -20,9 +20,10 @@ import { FilmSceneNarrationPart } from "./FilmSceneNarrationPart";
 
 interface FilmSceneCardProps {
   scene: Scene;
+  sceneNumber: number;
   sceneCount: number;
   project: FilmProjectDetail;
-  episode: EpisodeDetail;
+  openRequests: readonly GenerationRequest[];
   castOptions: readonly SelectOption<string>[];
   isLocked: boolean;
   isInsertDisabled: boolean;
@@ -31,9 +32,10 @@ interface FilmSceneCardProps {
 
 export function FilmSceneCard({
   scene,
+  sceneNumber,
   sceneCount,
   project,
-  episode,
+  openRequests,
   castOptions,
   isLocked,
   isInsertDisabled,
@@ -43,15 +45,15 @@ export function FilmSceneCard({
   const savePromptsMutation = useUpdateFilmSceneMutation();
   const deleteSceneMutation = useDeleteFilmSceneMutation();
 
-  const sceneNumber = toSceneNumber(scene);
-  const isBusy = isSceneBusy(scene, episode.openRequests);
+  const isBusy = isSceneBusy(scene, openRequests);
   const isMenuLocked = isLocked || moveSceneMutation.isPending || deleteSceneMutation.isPending;
   const charactersById = new Map(project.characters.map((character) => [character.id, character]));
   const sceneCharacters = scene.characterIds.flatMap((characterId) => charactersById.get(characterId) ?? []);
   const menuError = moveSceneMutation.error ?? deleteSceneMutation.error;
   const partProps = {
     scene,
-    openRequests: episode.openRequests,
+    sceneNumber,
+    openRequests,
     orientation: project.orientation,
     isLocked,
     isSceneBusy: isBusy,
@@ -107,7 +109,8 @@ export function FilmSceneCard({
         {project.allowNarration && (
           <FilmSceneNarrationPart
             scene={scene}
-            openRequests={episode.openRequests}
+            sceneNumber={sceneNumber}
+            openRequests={openRequests}
             isLocked={isLocked}
             isSceneBusy={isBusy}
           />

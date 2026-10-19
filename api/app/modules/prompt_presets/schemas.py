@@ -19,7 +19,9 @@ class PromptsBody(BaseModel):
     character_image: str
     character_voice: str
     scene: str
+    film_outline: str
     film_script: str
+    story_bible: str
     clone_assets: str
     clone_shots: str
     clone_localization: str

@@ -23,11 +23,14 @@ from app.modules.films.views import (
     CharacterSummary,
     EpisodeDetail,
     EpisodeSummary,
+    PartDetail,
+    PartSummary,
     ProjectDetail,
     ProjectSummary,
 )
 from app.modules.media_generation.models import GenerationStatus
 from app.modules.media_generation.schemas import GenerationRequestResponse
+from app.modules.prompt_presets.prompt_texts import DEFAULT_PRESET_PROMPTS
 
 CAMEL_CASE_CONFIG = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 ORM_CAMEL_CASE_CONFIG = ConfigDict(
@@ -40,6 +43,7 @@ DEFAULT_TARGET_DURATION_S = 60
 class StopPoints(BaseModel):
     model_config = CAMEL_CASE_CONFIG
 
+    after_outline: bool = False
     after_script: bool = False
     after_references: bool = False
     after_scene_images: bool = True
@@ -74,6 +78,7 @@ class UpdateProjectRequest(BaseModel):
     allow_narration: bool | None = None
     narrator_voice_id: str | None = None
     allow_music: bool | None = None
+    story_bible: str | None = None
 
 
 class CreateCharacterRequest(BaseModel):
@@ -157,6 +162,7 @@ class UpdateEpisodeRequest(BaseModel):
     subtitle_style: SubtitleStyle | None = None
     music_prompt: str | None = None
     thumbnail_prompt: str | None = None
+    summary: str | None = None
 
 
 class ChooseThumbnailRequest(BaseModel):
@@ -165,9 +171,28 @@ class ChooseThumbnailRequest(BaseModel):
     candidate: int
 
 
+class CreatePartRequest(BaseModel):
+    model_config = CAMEL_CASE_CONFIG
+
+    after_position: int | None = None
+    title: str
+    plan: str
+    target_duration_s: int
+
+
+class UpdatePartRequest(BaseModel):
+    model_config = CAMEL_CASE_CONFIG
+
+    title: str | None = None
+    plan: str | None = None
+    target_duration_s: int | None = None
+    position: int | None = None
+
+
 class CreateSceneRequest(BaseModel):
     model_config = CAMEL_CASE_CONFIG
 
+    part_id: str
     after_position: int | None = None
     image_prompt: str
     video_prompt: str
@@ -288,6 +313,9 @@ class FilmProjectResponse(BaseModel):
     status: ProjectStatus
     last_episode_number: int
     flow_project_id: str | None
+    story_bible: str | None
+    story_bible_episode_id: str | None
+    story_bible_updated_at: datetime | None
     episode_count: int
     created_at: datetime
     updated_at: datetime
@@ -311,6 +339,7 @@ class EpisodeResponse(BaseModel):
     number: int
     title: str
     logline: str | None
+    summary: str | None
     source: EpisodeSource
     idea: str | None
     source_job_id: str | None
@@ -375,6 +404,7 @@ class SceneResponse(BaseModel):
 
     id: str
     episode_id: str
+    part_id: str
     position: int
     image_prompt: str
     video_prompt: str
@@ -399,6 +429,61 @@ class SceneResponse(BaseModel):
     updated_at: datetime
 
 
+class EpisodePartResponse(BaseModel):
+    model_config = ORM_CAMEL_CASE_CONFIG
+
+    id: str
+    episode_id: str
+    position: int
+    title: str
+    plan: str
+    target_duration_s: int
+    recap: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class PartCountsResponse(BaseModel):
+    model_config = ORM_CAMEL_CASE_CONFIG
+
+    scene_count: int
+    images_done: int
+    clips_done: int
+    narration_done: int
+    narration_with_text: int
+    failed_count: int
+    open_request_count: int
+
+
+class EpisodePartWithCountsResponse(EpisodePartResponse, PartCountsResponse):
+    @classmethod
+    def from_summary(cls, summary: PartSummary) -> "EpisodePartWithCountsResponse":
+        return cls.model_validate(
+            {
+                **EpisodePartResponse.model_validate(summary.part).model_dump(),
+                **PartCountsResponse.model_validate(summary.counts).model_dump(),
+            }
+        )
+
+
+class PartDetailResponse(EpisodePartResponse):
+    scenes: list[SceneResponse]
+    open_requests: list[GenerationRequestResponse]
+
+    @classmethod
+    def from_detail(cls, detail: PartDetail) -> "PartDetailResponse":
+        return cls.model_validate(
+            {
+                **EpisodePartResponse.model_validate(detail.part).model_dump(),
+                "scenes": [SceneResponse.model_validate(scene) for scene in detail.scenes],
+                "open_requests": [
+                    GenerationRequestResponse.model_validate(request)
+                    for request in detail.open_requests
+                ],
+            }
+        )
+
+
 class ThumbnailCandidateResponse(BaseModel):
     model_config = ORM_CAMEL_CASE_CONFIG
 
@@ -409,23 +494,32 @@ class ThumbnailCandidateResponse(BaseModel):
 
 
 class EpisodeDetailResponse(EpisodeResponse):
+    film_outline_prompt: str
     film_script_prompt: str
+    story_bible_prompt: str
     project_name: str
     is_source_deleted: bool
-    scenes: list[SceneResponse]
+    parts: list[EpisodePartWithCountsResponse]
     open_requests: list[GenerationRequestResponse]
     thumbnail_candidates: list[ThumbnailCandidateResponse]
 
     @classmethod
     def from_detail(cls, detail: EpisodeDetail) -> "EpisodeDetailResponse":
+        episode = detail.summary.episode
         episode_fields = EpisodeResponse.from_summary(detail.summary).model_dump()
         return cls.model_validate(
             {
                 **episode_fields,
-                "film_script_prompt": detail.summary.episode.film_script_prompt,
+                "film_outline_prompt": episode.film_outline_prompt
+                or DEFAULT_PRESET_PROMPTS.film_outline,
+                "film_script_prompt": episode.film_script_prompt,
+                "story_bible_prompt": episode.story_bible_prompt
+                or DEFAULT_PRESET_PROMPTS.story_bible,
                 "project_name": detail.project.name,
                 "is_source_deleted": detail.is_source_deleted,
-                "scenes": [SceneResponse.model_validate(scene) for scene in detail.scenes],
+                "parts": [
+                    EpisodePartWithCountsResponse.from_summary(summary) for summary in detail.parts
+                ],
                 "open_requests": [
                     GenerationRequestResponse.model_validate(request)
                     for request in detail.open_requests

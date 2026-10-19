@@ -1,4 +1,4 @@
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -31,11 +31,14 @@ from app.modules.films.models import (
     MediaStatus,
     SubtitleStyle,
 )
+from app.modules.films.part_service import to_part_counts
 from app.modules.films.repository import EpisodeCreation, FilmRepository
+from app.modules.films.story_rules import to_valid_summary
 from app.modules.films.views import (
     CUT_HEAD_S,
     EpisodeDetail,
     EpisodeSummary,
+    PartSummary,
     ThumbnailCandidate,
 )
 from app.modules.media_generation.models import GenerationKind, GenerationRequest, GenerationStatus
@@ -98,11 +101,12 @@ class EpisodeService:
     def get_episode_detail(self, episode_id: str) -> EpisodeDetail:
         context = self._tools.access.get_episode(episode_id)
         episode = context.episode
+        open_requests = self._tools.repository.find_open_requests_for_episode(episode.id)
         return EpisodeDetail(
             summary=EpisodeSummary(episode),
             project=context.project,
-            scenes=self._tools.repository.find_scenes(episode.id),
-            open_requests=self._tools.repository.find_open_requests_for_episode(episode.id),
+            parts=self._summarize_parts(episode.id, open_requests),
+            open_requests=[request for request in open_requests if request.scene_id is None],
             thumbnail_candidates=self._find_thumbnail_candidates(episode.id),
             is_source_deleted=self._is_source_deleted(episode),
         )
@@ -151,7 +155,9 @@ class EpisodeService:
             subtitle_style=draft.subtitle_style,
             music_status=MediaStatus.NONE,
             preset={"id": snapshot.preset_id, "name": snapshot.name, "version": snapshot.version},
+            film_outline_prompt=snapshot.prompts.film_outline,
             film_script_prompt=snapshot.prompts.film_script,
+            story_bible_prompt=snapshot.prompts.story_bible,
             status=EpisodeStatus.DRAFT,
             step=None,
             needs_assembly=False,
@@ -180,6 +186,7 @@ class EpisodeService:
             episode=episode,
             new_characters=clone_import.new_characters,
             linked_character_ids=clone_import.linked_character_ids,
+            parts=clone_import.parts,
             scenes=clone_import.scenes,
         )
         return self._add_with_files(
@@ -223,10 +230,26 @@ class EpisodeService:
             values["target_duration_s"] = to_valid_target_duration(changes["target_duration_s"])
         if "thumbnail_prompt" in changes:
             values["thumbnail_prompt"] = to_optional_prompt(changes["thumbnail_prompt"])
+        if "summary" in changes:
+            values["summary"] = to_valid_summary(changes["summary"])
         values.update(to_music_values(episode, changes))
         if episode.status is EpisodeStatus.DONE and is_assembly_change(episode, values):
             values["needs_assembly"] = True
         return values
+
+    def _summarize_parts(
+        self, episode_id: str, open_requests: Sequence[GenerationRequest]
+    ) -> list[PartSummary]:
+        scenes = self._tools.repository.find_scenes(episode_id)
+        return [
+            PartSummary(
+                part=part,
+                counts=to_part_counts(
+                    [scene for scene in scenes if scene.part_id == part.id], open_requests
+                ),
+            )
+            for part in self._tools.repository.find_parts(episode_id)
+        ]
 
     def _find_thumbnail_candidates(self, episode_id: str) -> list[ThumbnailCandidate]:
         newest_by_candidate: dict[int, GenerationRequest] = {}

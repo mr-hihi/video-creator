@@ -20,9 +20,11 @@ change, the AI model proposes replacements, the app writes one scene per shot an
 through the media providers. Business spec: [business/5-film-clone.md](business/5-film-clone.md).
 
 **Film Studio** (`film_*` tables) makes AI films as series: a project holds the look and a cast from a
-shared character library; each episode runs six stages on its own — the AI model writes the script (from an idea,
-a finished Film Analysis or a finished Film Clone), then reference images, scene images, image-to-video
-clips, narration and music are made through the media providers, and ffmpeg assembles the MP4 and `.srt`.
+shared character library and a story bible; each episode, of any length, runs eight stages on its own — the AI
+model writes an outline of parts, then each part's scenes (from an idea, a finished Film Analysis or a finished
+Film Clone), then rewrites the story bible and the episode summary later episodes read; reference images, scene
+images, image-to-video clips, narration and music are made through the media providers, and ffmpeg assembles
+the MP4 and `.srt`.
 It pauses at the stop points the user ticked. Ported from flowkit (MIT). Business spec:
 [business/4-film-studio.md](business/4-film-studio.md).
 

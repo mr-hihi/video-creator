@@ -23,7 +23,6 @@ import {
   findQueuedRequest,
   findScenePassLabel,
   findSettledMediaError,
-  toSceneNumber,
 } from "@/features/films/utils";
 import { FilmCancelRequestButton } from "./FilmCancelRequestButton";
 
@@ -31,19 +30,26 @@ const IMAGE_REQUEST_KINDS: readonly GenerationKind[] = ["scene_image", "edit_ima
 
 interface FilmSceneImagePartProps {
   scene: Scene;
+  sceneNumber: number;
   openRequests: readonly GenerationRequest[];
   orientation: Orientation;
   isLocked: boolean;
   isSceneBusy: boolean;
 }
 
-export function FilmSceneImagePart({ scene, openRequests, orientation, isLocked, isSceneBusy }: FilmSceneImagePartProps) {
+export function FilmSceneImagePart({
+  scene,
+  sceneNumber,
+  openRequests,
+  orientation,
+  isLocked,
+  isSceneBusy,
+}: FilmSceneImagePartProps) {
   const generateImageMutation = useGenerateSceneMediaMutation();
   const editImageMutation = useEditSceneImageMutation();
   const uploadImageMutation = useUploadSceneImageMutation();
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
-  const sceneNumber = toSceneNumber(scene);
   const imageAlt = `Scene ${sceneNumber} image`;
   const busyLabel = describeBusyMedia(scene.imageStatus);
   const statusParts = [busyLabel, findScenePassLabel(scene.id, openRequests)].filter(Boolean);

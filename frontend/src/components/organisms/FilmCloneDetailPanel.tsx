@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/atoms/Button";
@@ -27,7 +28,7 @@ import { canResumeFilmClone, isFilmCloneBusy } from "@/features/filmClones/utils
 import { SEND_TO_FILM_STUDIO_LABEL } from "@/features/films/constants";
 import { isNotFoundError } from "@/lib/api/client";
 import { FilmCloneTabs } from "./FilmCloneTabs";
-import { SendToFilmStudioForm } from "./SendToFilmStudioForm";
+import { SendCloneToFilmStudioForm } from "./SendCloneToFilmStudioForm";
 
 interface FilmCloneDetailPanelProps {
   cloneId: string;
@@ -56,6 +57,7 @@ function CloneNotFound() {
 function FilmCloneDetailContent({ clone, fetchedAtMs }: { clone: FilmCloneDetail; fetchedAtMs: number }) {
   const router = useRouter();
   const deleteCloneMutation = useDeleteFilmCloneMutation();
+  const [isSendDialogOpen, setIsSendDialogOpen] = useState(false);
   const usedPrompts = { ...clone.job?.options.prompts, ...clone.prompts };
 
   function handleDelete() {
@@ -68,8 +70,11 @@ function FilmCloneDetailContent({ clone, fetchedAtMs }: { clone: FilmCloneDetail
       <Panel
         title={clone.sourceFilename}
         headerAction={
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <CloneStatusBadge status={clone.status} />
+            <Button disabled={clone.status !== "done"} onClick={() => setIsSendDialogOpen(true)}>
+              {SEND_TO_FILM_STUDIO_LABEL}
+            </Button>
             {!isFilmCloneBusy(clone) && (
               <Button variant="secondary" disabled={deleteCloneMutation.isPending} onClick={handleDelete}>
                 Delete
@@ -90,11 +95,6 @@ function FilmCloneDetailContent({ clone, fetchedAtMs }: { clone: FilmCloneDetail
           <FilmCloneTabs clone={clone} />
         </div>
       </Panel>
-      {clone.status === "done" && (
-        <Panel title={SEND_TO_FILM_STUDIO_LABEL}>
-          <SendToFilmStudioForm clone={clone} />
-        </Panel>
-      )}
       {Object.keys(usedPrompts).length > 0 && (
         <details className="rounded-xl border border-border bg-surface p-4 shadow-sm sm:p-6">
           <summary className="cursor-pointer text-lg font-semibold">Prompts used</summary>
@@ -103,6 +103,7 @@ function FilmCloneDetailContent({ clone, fetchedAtMs }: { clone: FilmCloneDetail
           </div>
         </details>
       )}
+      {isSendDialogOpen && <SendCloneToFilmStudioForm clone={clone} onClose={() => setIsSendDialogOpen(false)} />}
     </div>
   );
 }

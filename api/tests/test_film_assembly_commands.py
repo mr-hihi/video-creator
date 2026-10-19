@@ -317,10 +317,12 @@ def test_finish_args_copy_the_joined_film_without_music_or_burned_subtitles(copy
     ]
 
 
-def test_finish_args_mix_music_under_the_film_with_a_fade_out(music_finish_args):
+def test_finish_args_loop_the_music_under_the_film_with_a_fade_out(music_finish_args):
     assert music_finish_args == [
         "-i",
         "/tmp/film-assembly-1/joined.mp4",
+        "-stream_loop",
+        "-1",
         "-i",
         "/films/music.mp3",
         "-filter_complex",
@@ -349,7 +351,7 @@ def test_finish_args_mix_music_under_the_film_with_a_fade_out(music_finish_args)
 def test_finish_args_start_the_fade_at_zero_for_a_film_shorter_than_the_fade(
     short_film_music_finish_args,
 ):
-    assert short_film_music_finish_args[5] == (
+    assert short_film_music_finish_args[7] == (
         "[1:a]volume=0.25,afade=t=out:st=0.000:d=2.000[music];"
         "[0:a][music]amix=inputs=2:duration=first:normalize=0[a]"
     )
@@ -380,9 +382,11 @@ def test_finish_args_burn_the_subtitles_in_their_style(burned_finish_args):
 
 
 def test_finish_args_burn_subtitles_and_mix_music_in_one_graph(music_and_burned_finish_args):
-    assert music_and_burned_finish_args[:6] == [
+    assert music_and_burned_finish_args[:8] == [
         "-i",
         "/tmp/film-assembly-1/joined.mp4",
+        "-stream_loop",
+        "-1",
         "-i",
         "/films/music.mp3",
         "-filter_complex",

@@ -20,6 +20,7 @@ from app.modules.films.models import (
     Character,
     EntityType,
     Episode,
+    EpisodePart,
     EpisodeStatus,
     FilmProject,
     MediaStatus,
@@ -36,6 +37,17 @@ UPLOAD_MAX_MB = 1
 MAI = Character(id="c1", name="Mai", entity_type=EntityType.CHARACTER)
 HARBOR = Character(id="c2", name="Old Harbor", entity_type=EntityType.LOCATION)
 VOICE = VoiceTemplate(id="v1", name="narrator-en")
+PARTS_BY_ID = {
+    part.id: part
+    for part in (
+        EpisodePart(id="pt1", episode_id="e1", position=0),
+        EpisodePart(id="pt2", episode_id="e1", position=1),
+        EpisodePart(id="pt3", episode_id="e1", position=2),
+        EpisodePart(id="pt9", episode_id="e2", position=0),
+    )
+}
+SCENE_COUNTS_BY_PART_ID = {"pt1": 3, "pt2": 2}
+EARLIER_SCENE_COUNTS_BY_PART_ID = {"pt1": 0, "pt2": 3, "pt3": 5}
 NARRATION_RESET_VALUES = {
     "narration_status": MediaStatus.NONE,
     "narration_path": None,
@@ -69,6 +81,7 @@ def build_scene(**values) -> Scene:
     defaults = {
         "id": "s1",
         "episode_id": "e1",
+        "part_id": "pt1",
         "position": 0,
         "image_prompt": "Mai stands on the pier",
         "video_prompt": "0-3s: Mai walks.",
@@ -89,6 +102,7 @@ def build_scene(**values) -> Scene:
 
 def build_draft(**values) -> SceneDraft:
     defaults = {
+        "part_id": "pt1",
         "after_position": None,
         "image_prompt": " Close-up of the bell ",
         "video_prompt": "0-3s: The bell sways.",
@@ -102,12 +116,19 @@ def build_parts(tmp_path, scene: Scene | None = None, **records):
     scene = scene or build_scene()
     episode = records.get("episode") or build_episode()
     project = records.get("project") or build_project()
+    scene_counts = records.get("scene_counts", SCENE_COUNTS_BY_PART_ID)
     repository = MagicMock(spec=FilmRepository)
     repository.find_scene.return_value = scene
     repository.find_episode.return_value = episode
     repository.find_project.return_value = project
     repository.find_open_requests_for_scene.return_value = []
-    repository.count_scenes_by_episode.return_value = {"e1": 3}
+    repository.find_part.side_effect = PARTS_BY_ID.get
+    repository.count_scenes_by_part.side_effect = lambda part_ids: {
+        part_id: scene_counts[part_id] for part_id in part_ids if part_id in scene_counts
+    }
+    repository.count_scenes_before_part.side_effect = lambda part: EARLIER_SCENE_COUNTS_BY_PART_ID[
+        part.id
+    ]
     repository.find_project_characters.return_value = [MAI, HARBOR]
     repository.find_characters_by_ids.return_value = {"c1": MAI, "c2": HARBOR}
     repository.find_voice.return_value = VOICE
@@ -161,6 +182,34 @@ def test_a_new_scene_goes_after_the_given_position(inserted_position):
     assert inserted_position.actual == inserted_position.expected
 
 
+@pytest.fixture(params=[("pt2", None, 2), ("pt2", -1, 0), ("pt2", 0, 1), ("pt3", None, 0)])
+def position_in_part(request, tmp_path):
+    part_id, after_position, expected_position = request.param
+    parts = build_parts(tmp_path)
+    parts.service.add_scene("e1", build_draft(part_id=part_id, after_position=after_position))
+    scene = parts.repository.insert_scene.call_args.args[0]
+    return Outcome((scene.part_id, scene.position), (part_id, expected_position))
+
+
+def test_a_new_scene_takes_a_position_within_its_part(position_in_part):
+    assert position_in_part.actual == position_in_part.expected
+
+
+@pytest.fixture(params=[({"pt1": 79}, 79), ({"pt1": 3, "pt2": 80}, 3)])
+def scene_added_below_the_limit(request, tmp_path):
+    scene_counts, expected_position = request.param
+    parts = build_parts(tmp_path, scene_counts=scene_counts)
+    parts.service.add_scene("e1", build_draft())
+    scene = parts.repository.insert_scene.call_args.args[0]
+    return Outcome((scene.part_id, scene.position), ("pt1", expected_position))
+
+
+def test_a_part_under_80_scenes_takes_another_whatever_other_parts_hold(
+    scene_added_below_the_limit,
+):
+    assert scene_added_below_the_limit.actual == scene_added_below_the_limit.expected
+
+
 @pytest.fixture
 def added_scene(tmp_path):
     parts = build_parts(tmp_path)
@@ -174,6 +223,7 @@ def test_a_new_scene_starts_empty_with_the_default_trim(added_scene):
     scene = added_scene.scene
     assert (
         scene.episode_id,
+        scene.part_id,
         scene.image_prompt,
         scene.video_prompt,
         scene.narrator_text,
@@ -186,6 +236,7 @@ def test_a_new_scene_starts_empty_with_the_default_trim(added_scene):
         scene.trim_end_ms,
     ) == (
         "e1",
+        "pt1",
         "Close-up of the bell",
         "0-3s: The bell sways.",
         None,
@@ -237,7 +288,25 @@ def test_a_scene_without_characters_reads_no_cast(scene_added_to_done_episode):
 
 @pytest.fixture(
     params=[
-        ({}, {"count": 80}, InvalidFilmRequestError, "An episode holds at most 80 scenes"),
+        (
+            {"part_id": "pt-x"},
+            {},
+            InvalidFilmRequestError,
+            "Part pt-x is not in this episode",
+        ),
+        ({"part_id": "pt9"}, {}, InvalidFilmRequestError, "Part pt9 is not in this episode"),
+        (
+            {},
+            {"scene_counts": {"pt1": 80}},
+            InvalidFilmRequestError,
+            "A part holds at most 80 scenes",
+        ),
+        (
+            {"part_id": "pt2"},
+            {"scene_counts": {"pt1": 3, "pt2": 80}},
+            InvalidFilmRequestError,
+            "A part holds at most 80 scenes",
+        ),
         ({"clip_duration_s": 3}, {}, InvalidFilmRequestError, "Clip length must be 4-30 seconds"),
         ({"clip_duration_s": 31}, {}, InvalidFilmRequestError, "Clip length must be 4-30 seconds"),
         (
@@ -281,8 +350,12 @@ def test_a_scene_without_characters_reads_no_cast(scene_added_to_done_episode):
 )
 def rejected_add(request, tmp_path):
     draft_values, setup, error_class, message = request.param
-    parts = build_parts(tmp_path, episode=setup.get("episode"), project=setup.get("project"))
-    parts.repository.count_scenes_by_episode.return_value = {"e1": setup.get("count", 3)}
+    parts = build_parts(
+        tmp_path,
+        episode=setup.get("episode"),
+        project=setup.get("project"),
+        scene_counts=setup.get("scene_counts", SCENE_COUNTS_BY_PART_ID),
+    )
     if setup.get("episode_missing"):
         parts.repository.find_episode.return_value = None
     with pytest.raises(error_class) as error:
@@ -341,10 +414,22 @@ CLIP_SCENE = {
         ({}, {"position": 99}, InvalidFilmRequestError, "Position must be between 0 and 2"),
         ({}, {"position": -1}, InvalidFilmRequestError, "Position must be between 0 and 2"),
         (
+            {"part_id": "pt2", "position": 1},
+            {"position": 2},
+            InvalidFilmRequestError,
+            "Position must be between 0 and 1",
+        ),
+        (
             {"position": 1},
             {"trim_start_ms": 1000, "trim_end_ms": 5000},
             FilmConflictError,
             "Scene 2 has no clip yet",
+        ),
+        (
+            {"part_id": "pt2", "position": 1, "clip_status": MediaStatus.PROCESSING},
+            {"trim_end_ms": 5000},
+            FilmConflictError,
+            "Scene 5 has no clip yet",
         ),
         (
             CLIP_SCENE,
@@ -733,6 +818,26 @@ def missing_input_error(request, tmp_path):
 
 def test_a_generation_needs_its_input(missing_input_error):
     assert missing_input_error.actual == missing_input_error.expected
+
+
+@pytest.fixture(
+    params=[
+        ({"part_id": "pt1", "position": 1}, "Scene 2 has no image yet"),
+        ({"part_id": "pt2", "position": 1}, "Scene 5 has no image yet"),
+        ({"part_id": "pt3", "position": 0}, "Scene 6 has no image yet"),
+        ({"part_id": "pt-gone", "position": 1}, "Scene 2 has no image yet"),
+    ]
+)
+def numbered_scene_error(request, tmp_path):
+    scene_values, message = request.param
+    parts = build_parts(tmp_path, build_scene(**scene_values))
+    with pytest.raises(FilmConflictError) as error:
+        parts.service.generate_clip("s1")
+    return Outcome(str(error.value), message)
+
+
+def test_a_scene_number_counts_the_scenes_of_earlier_parts(numbered_scene_error):
+    assert numbered_scene_error.actual == numbered_scene_error.expected
 
 
 @pytest.fixture(params=["no-voice-id", "voice-gone"])

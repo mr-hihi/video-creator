@@ -9,7 +9,9 @@ from app.modules.films.stage_runner import (
     WORKER_STEPS,
     EpisodeAssembler,
     EpisodeStageRunner,
+    OutlineWriter,
     ScriptWriter,
+    StoryBibleUpdater,
 )
 from app.modules.films.step_commands import EpisodeStepCommands
 
@@ -29,7 +31,9 @@ logger = logging.getLogger(__name__)
 class EpisodeStepTools:
     repository: FilmRepository
     stage_runner: EpisodeStageRunner
+    outline_writer: OutlineWriter
     script_writer: ScriptWriter
+    story_bible_updater: StoryBibleUpdater
     assembler: EpisodeAssembler
     commands: EpisodeStepCommands
 
@@ -46,7 +50,7 @@ class EpisodeStepRunner:
         return self._advance_stalled_stages()
 
     def _run_step(self, episode: Episode, is_stopping: Callable[[], bool]) -> None:
-        step = episode.step or EpisodeStep.WRITING_SCRIPT
+        step = episode.step or EpisodeStep.WRITING_OUTLINE
         logger.info("Episode %s step %s started", episode.id, step)
         try:
             with self._tools.commands.running(episode.id):
@@ -60,16 +64,32 @@ class EpisodeStepRunner:
         logger.info("Episode %s step %s finished", episode.id, step)
 
     def _run_worker_step(self, episode: Episode, step: EpisodeStep) -> None:
-        if step is EpisodeStep.WRITING_SCRIPT:
-            self._write_script(episode)
-            return
-        film = self._tools.assembler.assemble(episode.id)
-        self._tools.stage_runner.finish_assembly(episode.id, film)
+        if step is EpisodeStep.WRITING_OUTLINE:
+            self._write_outline(episode)
+        elif step is EpisodeStep.WRITING_SCRIPT:
+            self._write_next_part(episode)
+        elif step is EpisodeStep.UPDATING_STORY_BIBLE:
+            self._tools.story_bible_updater.update_story_bible(episode.id)
+            self._tools.stage_runner.finish_worker_stage(episode.id, step)
+        else:
+            film = self._tools.assembler.assemble(episode.id)
+            self._tools.stage_runner.finish_assembly(episode.id, film)
 
-    def _write_script(self, episode: Episode) -> None:
-        if not self._tools.repository.find_scenes(episode.id):
-            self._tools.script_writer.write_script(episode.id)
-        self._tools.stage_runner.finish_script(episode.id)
+    def _write_outline(self, episode: Episode) -> None:
+        if not self._tools.repository.find_parts(episode.id):
+            self._tools.outline_writer.write_outline(episode.id)
+        self._tools.stage_runner.finish_worker_stage(episode.id, EpisodeStep.WRITING_OUTLINE)
+
+    def _write_next_part(self, episode: Episode) -> None:
+        parts = self._tools.repository.find_parts(episode.id)
+        scene_counts_by_part_id = self._tools.repository.count_scenes_by_part(
+            [part.id for part in parts]
+        )
+        unwritten_parts = [part for part in parts if not scene_counts_by_part_id.get(part.id)]
+        if unwritten_parts:
+            self._tools.script_writer.write_part(unwritten_parts[0].id)
+            return
+        self._tools.stage_runner.finish_worker_stage(episode.id, EpisodeStep.WRITING_SCRIPT)
 
     def _fail(self, episode: Episode, step: EpisodeStep, error: Exception) -> None:
         if isinstance(error, EpisodeStepFailedError):

@@ -18,6 +18,8 @@ MAX_MOMENTS_PATTERN = re.compile(r"Choose at most (\d+) key moments", re.IGNOREC
 TARGET_LENGTH_PATTERN = re.compile(r"add up to about (\d+)s", re.IGNORECASE)
 TYPICAL_CLIP_PATTERN = re.compile(r"a typical clip lasts (\d+)s", re.IGNORECASE)
 NAMED_LINE_PATTERN = re.compile(r"^(.+?) \(([^)]+)\)")
+PART_NUMBER_PATTERN = re.compile(r"Write part (\d+) now\.")
+EPISODE_LINE_PATTERN = re.compile(r"^Episode (\d+): ", re.MULTILINE)
 NO_ITEMS_LINE = "(none)"
 NARRATION_OFF_LINE = "Narration: off"
 CHARACTERS_HEADING = "Characters:\n"
@@ -25,6 +27,8 @@ MAX_SCENE_PROMPT_HEADINGS = 5
 DEFAULT_SCENE_COUNT = 3
 DEFAULT_CLIP_LENGTH_S = 8
 CUT_HEAD_S = 1
+MAX_PART_LENGTH_S = 600
+DEFAULT_EPISODE_LENGTH_S = 60
 
 
 def build_scenario_answer(ask: AskView, rule: dict[str, Any]) -> str:
@@ -54,6 +58,10 @@ def build_reply(ask: AskView) -> dict[str, Any]:
         return build_localization(ask)
     if "assets" in properties:
         return build_assets(ask, properties)
+    if "parts" in properties:
+        return build_film_outline(ask)
+    if "storyBible" in properties:
+        return build_story_bible(ask)
     if "characters" in properties:
         return build_film_script(ask, properties)
     if "shotId" in item_properties.get("scenes", {}):
@@ -196,9 +204,10 @@ def build_film_script(ask: AskView, properties: dict[str, Any]) -> dict[str, Any
     reference_frames = read_block(ask.message, "Reference frames")
     character_name = cast_names[0] if cast_names else "Mock Keeper"
     has_narration = NARRATION_OFF_LINE not in ask.message
+    part_match = PART_NUMBER_PATTERN.search(ask.message)
+    part_number = part_match.group(1) if part_match else "1"
     return {
-        "title": "Mock episode",
-        "logline": "A mock episode written for the test stack.",
+        "recap": f"Mock recap of part {part_number}: {character_name} reaches the shore.",
         "characters": [
             {
                 "name": character_name,
@@ -218,8 +227,36 @@ def build_film_script(ask: AskView, properties: dict[str, Any]) -> dict[str, Any
             }
             for number in range(1, scene_count + 1)
         ],
+    }
+
+
+def build_film_outline(ask: AskView) -> dict[str, Any]:
+    target_match = TARGET_LENGTH_PATTERN.search(ask.message)
+    target_s = int(target_match.group(1)) if target_match else DEFAULT_EPISODE_LENGTH_S
+    part_count = math.ceil(target_s / MAX_PART_LENGTH_S)
+    return {
+        "title": "Mock episode",
+        "logline": "A mock episode written for the test stack.",
+        "parts": [
+            {
+                "title": f"Mock part {number}",
+                "plan": f"Mock plan for part {number}.",
+                "durationS": round(target_s / part_count),
+            }
+            for number in range(1, part_count + 1)
+        ],
         "musicPrompt": "Slow ambient strings, 70 bpm, wistful.",
         "thumbnailPrompt": "A lighthouse at dusk, one lit window.",
+    }
+
+
+def build_story_bible(ask: AskView) -> dict[str, Any]:
+    episode_match = EPISODE_LINE_PATTERN.search(ask.message)
+    episode_number = episode_match.group(1) if episode_match else "1"
+    entry = f"E{episode_number} — the mock cast moves the story on."
+    return {
+        "summary": f"Mock summary of episode {episode_number}.",
+        "storyBible": "\n".join([*read_block(ask.message, "Current story bible"), entry]),
     }
 
 

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from app.modules.films.models import (
     Character,
     Episode,
+    EpisodePart,
     FilmProject,
     Scene,
 )
@@ -61,10 +62,34 @@ class ThumbnailCandidate:
 
 
 @dataclass(frozen=True)
+class PartCounts:
+    scene_count: int
+    images_done: int
+    clips_done: int
+    narration_done: int
+    narration_with_text: int
+    failed_count: int
+    open_request_count: int
+
+
+@dataclass(frozen=True)
+class PartSummary:
+    part: EpisodePart
+    counts: PartCounts
+
+
+@dataclass(frozen=True)
+class PartDetail:
+    part: EpisodePart
+    scenes: Sequence[Scene]
+    open_requests: Sequence[GenerationRequest]
+
+
+@dataclass(frozen=True)
 class EpisodeDetail:
     summary: EpisodeSummary
     project: FilmProject
-    scenes: Sequence[Scene]
+    parts: Sequence[PartSummary]
     open_requests: Sequence[GenerationRequest]
     thumbnail_candidates: Sequence[ThumbnailCandidate]
     is_source_deleted: bool

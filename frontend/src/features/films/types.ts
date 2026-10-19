@@ -21,7 +21,9 @@ export type EpisodeSource = "idea" | "film_analysis" | "film_clone";
 export type EpisodeStatus = "draft" | "running" | "paused" | "done" | "failed";
 
 export type EpisodeStep =
+  | "writing_outline"
   | "writing_script"
+  | "updating_story_bible"
   | "generating_references"
   | "generating_scene_images"
   | "generating_clips"
@@ -42,6 +44,7 @@ export interface EpisodeStage {
   step: EpisodeStep;
   label: string;
   state: StageState;
+  progressLabel: string | undefined;
 }
 
 export interface SelectableOption {
@@ -50,6 +53,7 @@ export interface SelectableOption {
 }
 
 export interface StopPoints {
+  afterOutline: boolean;
   afterScript: boolean;
   afterReferences: boolean;
   afterSceneImages: boolean;
@@ -124,6 +128,9 @@ export interface FilmProject {
   status: ProjectStatus;
   lastEpisodeNumber: number;
   flowProjectId: string | null;
+  storyBible: string | null;
+  storyBibleEpisodeId: string | null;
+  storyBibleUpdatedAt: string | null;
   episodeCount: number;
   createdAt: string;
   updatedAt: string;
@@ -135,6 +142,7 @@ export interface Episode {
   number: number;
   title: string;
   logline: string | null;
+  summary: string | null;
   source: EpisodeSource;
   idea: string | null;
   sourceJobId: string | null;
@@ -175,6 +183,7 @@ export interface FilmProjectDetail extends FilmProject {
 export interface Scene {
   id: string;
   episodeId: string;
+  partId: string;
   position: number;
   imagePrompt: string;
   videoPrompt: string;
@@ -206,11 +215,42 @@ export interface ThumbnailCandidate {
   errorMessage: string | null;
 }
 
+export interface EpisodePart {
+  id: string;
+  episodeId: string;
+  position: number;
+  title: string;
+  plan: string;
+  targetDurationS: number;
+  recap: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PartCounts {
+  sceneCount: number;
+  imagesDone: number;
+  clipsDone: number;
+  narrationDone: number;
+  narrationWithText: number;
+  failedCount: number;
+  openRequestCount: number;
+}
+
+export interface EpisodePartWithCounts extends EpisodePart, PartCounts {}
+
+export interface PartDetail extends EpisodePart {
+  scenes: Scene[];
+  openRequests: GenerationRequest[];
+}
+
 export interface EpisodeDetail extends Episode {
+  filmOutlinePrompt: string;
   filmScriptPrompt: string;
+  storyBiblePrompt: string;
   projectName: string;
   isSourceDeleted: boolean;
-  scenes: Scene[];
+  parts: EpisodePartWithCounts[];
   openRequests: GenerationRequest[];
   thumbnailCandidates: ThumbnailCandidate[];
 }
@@ -235,7 +275,9 @@ export interface CreateProjectFields extends ProjectSettings {
   characterIds: string[];
 }
 
-export type ProjectChanges = Partial<ProjectSettings>;
+export interface ProjectChanges extends Partial<ProjectSettings> {
+  storyBible?: string | null;
+}
 
 export interface ProjectSettingsDraft extends FilmLookSettings {
   name: string;
@@ -312,6 +354,23 @@ export interface EpisodeChanges {
   subtitleStyle?: SubtitleStyle;
   musicPrompt?: string;
   thumbnailPrompt?: string;
+  summary?: string;
+}
+
+export interface PartFields {
+  title: string;
+  plan: string;
+  targetDurationS: number;
+}
+
+export interface PartChanges extends Partial<PartFields> {
+  position?: number;
+}
+
+export interface PartDraft {
+  title: string;
+  plan: string;
+  targetDurationText: string;
 }
 
 export interface ScenePromptsDraft {
@@ -339,12 +398,4 @@ export interface SceneChanges extends Partial<ScenePromptFields> {
 export interface TrimDraft {
   startSecondsText: string;
   endSecondsText: string;
-}
-
-export interface SceneProgressCounts {
-  sceneCount: number;
-  doneImageCount: number;
-  doneClipCount: number;
-  doneNarrationCount: number;
-  narrationTextCount: number;
 }

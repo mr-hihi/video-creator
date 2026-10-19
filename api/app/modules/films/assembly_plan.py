@@ -4,10 +4,12 @@ from itertools import accumulate
 from pathlib import Path
 
 from app.modules.films.errors import EpisodeStepFailedError
-from app.modules.films.models import Episode, FilmProject, MediaStatus, Scene
+from app.modules.films.models import Episode, EpisodePart, FilmProject, MediaStatus, Scene
+from app.modules.films.part_rules import to_part_number
 
 NARRATION_TAIL_MS = 500
 NO_CLIP_MESSAGE = "Scene {number} has no clip"
+NO_PART_SCENES_MESSAGE = "Part {number} has no scenes"
 ASSEMBLY_FAILED_MESSAGE = "Assembly failed: {error}"
 NO_SCENES_ERROR = "the episode has no scenes"
 SRT_TIME_FORMAT = "{hours:02d}:{minutes:02d}:{seconds:02d},{milliseconds:03d}"
@@ -61,12 +63,21 @@ class AssemblyPlan:
     cues: tuple[SubtitleCue, ...]
 
 
+def ensure_every_part_has_scenes(parts: Sequence[EpisodePart], scenes: Sequence[Scene]) -> None:
+    part_ids_with_scenes = {scene.part_id for scene in scenes}
+    for part in parts:
+        if part.id not in part_ids_with_scenes:
+            raise EpisodeStepFailedError(
+                NO_PART_SCENES_MESSAGE.format(number=to_part_number(part.position))
+            )
+
+
 def ensure_every_clip_done(scenes: Sequence[Scene]) -> None:
     if not scenes:
         raise EpisodeStepFailedError(ASSEMBLY_FAILED_MESSAGE.format(error=NO_SCENES_ERROR))
-    for scene in scenes:
+    for number, scene in enumerate(scenes, start=1):
         if scene.clip_status is not MediaStatus.DONE or not scene.clip_path:
-            raise EpisodeStepFailedError(NO_CLIP_MESSAGE.format(number=scene.position + 1))
+            raise EpisodeStepFailedError(NO_CLIP_MESSAGE.format(number=number))
 
 
 def is_narration_used(project: FilmProject, scene: Scene) -> bool:

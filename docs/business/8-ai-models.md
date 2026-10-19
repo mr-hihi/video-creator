@@ -31,7 +31,7 @@ captured frames, never the video, whatever the settings say.
 |---|---|---|---|
 | `moments` | `Key moments` | `picking_moments` of every job — Video to Markdown (1.5), Film Analysis (3.2), the stage 1 job of a Film Clone (5.1) | `videoToMarkdown` |
 | `filmAnalysis` | `Film analysis` | the three prompt passes (3.3) | `characterImage`, `characterVoice`, `scene` |
-| `filmScript` | `Film script` | an episode's `writing_script` (4.2) | `filmScript` |
+| `filmScript` | `Film script` | an episode's `writing_outline`, `writing_script` and `updating_story_bible` (4.2) | `filmOutline`, `filmScript`, `storyBible` |
 | `filmClone` | `Film clone` | `extracting_assets`, `analyzing_shots`, `proposing`, `writing_script` (5.2–5.4) | `cloneAssets`, `cloneShots`, `cloneLocalization`, `cloneScript` |
 
 ### Values
@@ -97,7 +97,7 @@ When the call of an AI step starts, the run stores the model in `ai_used`, a JSO
 |---|---|---|
 | Job (1.1) — Video to Markdown, Film Analysis, a rerun, the stage 1 job of a Film Clone | `jobs.ai_used` | `picking_moments`, `writing_character_image_prompts`, `writing_character_voice_prompts`, `writing_scene_prompts` |
 | Film Clone (5.1) | `film_clones.ai_used` | `extracting_assets`, `analyzing_shots`, `proposing`, `writing_script` |
-| Episode (4.2) | `film_episodes.ai_used` | `writing_script` |
+| Episode (4.2) | `film_episodes.ai_used` | `writing_outline`, `writing_script`, `updating_story_bible` |
 
 ## 8.2 Calling a model
 
@@ -187,7 +187,7 @@ messages.
 |---|---|---|
 | `picking_moments` | `AI_MOMENTS_TIMEOUT_SEC` per call — per window in `whole_video` | 1.5, 8.3 |
 | Film Analysis passes | `FILM_PROMPT_TIMEOUT_SEC` | 3.3 |
-| Film Studio `writing_script` | `FILM_SCRIPT_TIMEOUT_SEC` | 4.2 |
+| Film Studio `writing_outline`, `writing_script`, `updating_story_bible` | `FILM_SCRIPT_TIMEOUT_SEC` per call — per part in `writing_script` | 4.2 |
 | Film Clone stages 2–4 | `CLONE_AI_SILENCE_SEC` without output, `CLONE_AI_MAX_RUN_SEC` in all | 5.1 |
 
 These keys apply to every provider. AI calls run in the batch worker one at a time and do not count toward a
@@ -268,8 +268,9 @@ YouTube downloads before `picking_moments` here, because the frames come from th
 Panels `New conversion` (1.7), `New analysis` (3.6) and `New clone` (5.6) show, above the submit button, a
 read-only line `AI: {models} · Input: {Subtitles | Whole video}` and a link `Change` →
 `/settings?tab=ai-models`. On `New clone`, `Input` is `filmCloneInputMode` and is followed by its own link
-`Change` → `/settings?tab=film-clone`. The `Rerun with another preset` and `Make a film` panels (3.6) and the
-`New episode` panel (4.5) show `AI: {models}` with a link `Change` → `/settings?tab=ai-models`.
+`Change` → `/settings?tab=film-clone`. The `Rerun with another preset` panel and the `Send to Film Studio`
+dialog (3.6) and the `New episode` panel (4.5) show `AI: {models}` with a link `Change` →
+`/settings?tab=ai-models`.
 
 - `{models}` = the model label when every group the run uses (8.1 § Check at creation) has the same model;
   else `{group label} — {model label}` per group, joined by ` · `, e.g.
@@ -283,7 +284,8 @@ read-only line `AI: {models} · Input: {Subtitles | Whole video}` and a link `Ch
   `Input` (`Subtitles` \| `Whole video`; `—` for a rerun). `AI` lists `{step label}: {model label}` for every
   entry of `ai_used` in step order — for a clone, its stage 1 job's then its own; `—` before the first AI step
   starts. Step labels are those of 1.7, 3.6 and 5.6.
-- The episode page (4.5) adds `AI` to its `Script` panel: the model `writing_script` used, or `—`.
+- The episode page (4.5) adds `AI` to its `Script` panel: `{step label}: {model label}` for every entry of
+  `ai_used` in step order, with the stage labels of 4.5, or `—` before the first AI step starts.
 - While a Film Clone call runs, its line reads `{model label} is working · …` (5.6), e.g.
   `Gemini 4 Argon is working · 01:12 · last output 3s ago`.
 

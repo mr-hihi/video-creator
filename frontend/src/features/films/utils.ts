@@ -3,6 +3,7 @@ import { buildFilmCloneDetailPath, formatTimestamp } from "@/features/filmClones
 import { COMPLETED_JOB_STEP_LABEL, NOT_STARTED_JOB_STEP_LABEL } from "@/features/jobs/constants";
 import type { Job } from "@/features/jobs/types";
 import { buildFilmAnalysisDetailPath } from "@/features/jobs/utils";
+import { joinAiUsedDescriptions, listAiUsedDescriptions } from "@/features/settings/utils";
 import { buildApiUrl } from "@/lib/api/client";
 import { formatDateTime } from "@/lib/format";
 import {
@@ -10,7 +11,9 @@ import {
   DEFAULT_FILM_LANGUAGE,
   DEFAULT_LIBRARY_TAB,
   DEFAULT_ORIENTATION,
+  DEFAULT_PROJECT_TAB,
   DEFAULT_STYLE_ID,
+  EMPTY_STORY_BIBLE_LABEL,
   EMPTY_VALUE_LABEL,
   EPISODE_STEP_LABELS,
   EPISODE_STEPS,
@@ -23,15 +26,17 @@ import {
   MEDIA_FAILED_LABEL_PREFIX,
   MEDIA_GENERATING_LABEL,
   MEDIA_QUEUED_LABEL,
+  NOT_WRITTEN_PART_LABEL,
   NO_VOICE_VALUE,
   PROJECT_NAME_MAX_LENGTH,
+  PROJECT_TAB_OPTIONS,
   REGENERATE_LABEL,
   REWRITABLE_EPISODE_STATUSES,
   SCENE_CLIP_DURATION_LOWER_LIMIT_S,
   SCENE_CLIP_DURATION_UPPER_LIMIT_S,
   TARGET_DURATION_LOWER_LIMIT_S,
-  TARGET_DURATION_UPPER_LIMIT_S,
   type LibraryTab,
+  type ProjectTab,
 } from "./constants";
 import type {
   CharacterDraft,
@@ -41,6 +46,8 @@ import type {
   Episode,
   EpisodeDetail,
   EpisodeDownloadFile,
+  EpisodePart,
+  EpisodePartWithCounts,
   EpisodeStage,
   EpisodeStatus,
   EpisodeStep,
@@ -52,11 +59,13 @@ import type {
   FilmStyle,
   MediaStatus,
   Orientation,
+  PartCounts,
+  PartDraft,
+  PartFields,
   ProjectSettings,
   ProjectSettingsDraft,
   Scene,
   SceneChanges,
-  SceneProgressCounts,
   ScenePromptFields,
   ScenePromptsDraft,
   SelectableOption,
@@ -88,6 +97,18 @@ const FALLBACK_FILE_STEM = "video";
 const EXTENSION_SEPARATOR = ".";
 const MS_PER_SECOND = 1_000;
 const DECIMAL_RADIX = 10;
+const STORY_BIBLE_STEP: EpisodeStep = "updating_story_bible";
+const SCRIPT_STEP: EpisodeStep = "writing_script";
+const PART_REWRITE_HIDDEN_STATUS: EpisodeStatus = "draft";
+const NO_PART_COUNTS: PartCounts = {
+  sceneCount: 0,
+  imagesDone: 0,
+  clipsDone: 0,
+  narrationDone: 0,
+  narrationWithText: 0,
+  failedCount: 0,
+  openRequestCount: 0,
+};
 
 export function buildFilmFileUrl(relativePath: string, version: string): string {
   const encodedPath = relativePath.split("/").map(encodeURIComponent).join("/");
@@ -100,6 +121,15 @@ export function buildEpisodeDownloadUrl(episodeId: string, file: EpisodeDownload
 
 export function buildFilmProjectPath(projectId: string): string {
   return `${FILMS_PATH}/${encodeURIComponent(projectId)}`;
+}
+
+export function buildFilmProjectTabPath(projectId: string, tab: ProjectTab): string {
+  return `${buildFilmProjectPath(projectId)}?tab=${tab}`;
+}
+
+export function resolveProjectTab(requestedTab: string | undefined): ProjectTab {
+  const matchingOption = PROJECT_TAB_OPTIONS.find((option) => option.value === requestedTab);
+  return matchingOption?.value ?? DEFAULT_PROJECT_TAB;
 }
 
 export function buildFilmEpisodePath(projectId: string, episodeNumber: number): string {
@@ -131,11 +161,7 @@ export function describeDuration(durationMs: number | null): string {
 }
 
 export function isValidTargetDuration(targetDurationS: number): boolean {
-  return (
-    Number.isInteger(targetDurationS) &&
-    targetDurationS >= TARGET_DURATION_LOWER_LIMIT_S &&
-    targetDurationS <= TARGET_DURATION_UPPER_LIMIT_S
-  );
+  return Number.isInteger(targetDurationS) && targetDurationS >= TARGET_DURATION_LOWER_LIMIT_S;
 }
 
 export function findScenePassLabel(sceneId: string, openRequests: readonly GenerationRequest[]): string | undefined {
@@ -162,12 +188,18 @@ export function isValidSceneClipDuration(clipDurationText: string): boolean {
   );
 }
 
-export function buildEpisodeStages(episode: Pick<Episode, "status" | "step">): EpisodeStage[] {
+export function buildEpisodeStages(episode: Pick<EpisodeDetail, "status" | "step" | "parts">): EpisodeStage[] {
+  const scriptPartProgress = describeScriptPartProgress(episode);
   return EPISODE_STEPS.map((step) => ({
     step,
     label: EPISODE_STEP_LABELS[step],
     state: determineStageState(episode, step),
+    progressLabel: step === SCRIPT_STEP ? scriptPartProgress : undefined,
   }));
+}
+
+export function describeEpisodeAiUsed(episode: Pick<Episode, "aiUsed">): string {
+  return joinAiUsedDescriptions(listAiUsedDescriptions(episode.aiUsed, EPISODE_STEPS, EPISODE_STEP_LABELS));
 }
 
 export function describeEpisodeStep(episode: Pick<Episode, "status" | "step">): string {
@@ -184,31 +216,83 @@ export function describeEpisodeNumber(episodeNumber: number): string {
   return `E${episodeNumber}`;
 }
 
-export function countSceneProgress(scenes: readonly Scene[]): SceneProgressCounts {
-  return {
-    sceneCount: scenes.length,
-    doneImageCount: scenes.filter((scene) => scene.imageStatus === "done").length,
-    doneClipCount: scenes.filter((scene) => scene.clipStatus === "done").length,
-    doneNarrationCount: scenes.filter((scene) => scene.narrationStatus === "done").length,
-    narrationTextCount: scenes.filter((scene) => Boolean(scene.narratorText?.trim())).length,
-  };
+export function describeEpisodeProgress(parts: readonly PartCounts[]): string {
+  const { sceneCount, imagesDone, clipsDone, narrationDone, narrationWithText } = parts.reduce(
+    addPartCounts,
+    NO_PART_COUNTS,
+  );
+  return `Parts ${parts.length} · Scenes ${sceneCount} · Images ${imagesDone}/${sceneCount} · Clips ${clipsDone}/${sceneCount} · Narration ${narrationDone}/${narrationWithText}`;
 }
 
-export function describeSceneProgress(counts: SceneProgressCounts): string {
-  const { sceneCount, doneImageCount, doneClipCount, doneNarrationCount, narrationTextCount } = counts;
-  return `Scenes ${sceneCount} · Images ${doneImageCount}/${sceneCount} · Clips ${doneClipCount}/${sceneCount} · Narration ${doneNarrationCount}/${narrationTextCount}`;
+export function describePartMediaProgress(part: Pick<PartCounts, "sceneCount" | "imagesDone" | "clipsDone">): string {
+  return `Images ${part.imagesDone}/${part.sceneCount} · Clips ${part.clipsDone}/${part.sceneCount}`;
 }
 
-export function canRewriteScript(episode: Pick<EpisodeDetail, "status" | "scenes">): boolean {
-  return REWRITABLE_EPISODE_STATUSES.has(episode.status) && !episode.scenes.some(hasSceneMedia);
+export function describePartSceneCount(part: Pick<PartCounts, "sceneCount">): string {
+  return part.sceneCount > 0 ? describeCount(part.sceneCount, "scenes") : NOT_WRITTEN_PART_LABEL;
+}
+
+export function describeScriptPartProgress(episode: Pick<EpisodeDetail, "status" | "step" | "parts">): string | undefined {
+  if (episode.status !== "running" || episode.step !== SCRIPT_STEP) return undefined;
+  const writingPartIndex = episode.parts.findIndex((part) => part.sceneCount === 0);
+  if (writingPartIndex < 0) return undefined;
+  return `Part ${writingPartIndex + 1} of ${episode.parts.length}`;
+}
+
+export function canRewriteScript(episode: Pick<EpisodeDetail, "status" | "parts">): boolean {
+  return REWRITABLE_EPISODE_STATUSES.has(episode.status) && !episode.parts.some(hasPartMedia);
+}
+
+export function isPartRewriteShown(
+  episode: Pick<Episode, "status">,
+  part: Pick<PartCounts, "imagesDone" | "clipsDone">,
+): boolean {
+  return episode.status !== PART_REWRITE_HIDDEN_STATUS && !hasPartMedia(part);
+}
+
+export function toPartNumber(part: Pick<EpisodePart, "position">): number {
+  return part.position + 1;
+}
+
+export function countScenesBeforePart(parts: readonly EpisodePartWithCounts[], partPosition: number): number {
+  return parts
+    .filter((part) => part.position < partPosition)
+    .reduce((sceneTotal, part) => sceneTotal + part.sceneCount, 0);
+}
+
+export function findStoryBibleEpisode<TEpisode extends Pick<Episode, "status" | "step">>(
+  episodes: readonly TEpisode[],
+): TEpisode | undefined {
+  return episodes.find((episode) => episode.status === "running" && episode.step === STORY_BIBLE_STEP);
+}
+
+export function describeStoryBibleUpdate(
+  project: Pick<FilmProject, "storyBibleEpisodeId" | "storyBibleUpdatedAt">,
+  episodes: readonly Pick<Episode, "id" | "number">[],
+): string {
+  const { storyBibleEpisodeId, storyBibleUpdatedAt } = project;
+  if (storyBibleUpdatedAt === null) return EMPTY_STORY_BIBLE_LABEL;
+  const updatedTime = formatDateTime(storyBibleUpdatedAt);
+  if (storyBibleEpisodeId === null) return `Edited by you · ${updatedTime}`;
+  const writingEpisode = episodes.find((episode) => episode.id === storyBibleEpisodeId);
+  if (!writingEpisode) return `Updated · ${updatedTime}`;
+  return `Updated by ${describeEpisodeNumber(writingEpisode.number)} · ${updatedTime}`;
+}
+
+export function describeStoryBibleUpdatingHint(episodeNumber: number): string {
+  return `${describeEpisodeNumber(episodeNumber)} is updating the story bible.`;
 }
 
 export function isMediaBusy(status: MediaStatus): boolean {
   return BUSY_MEDIA_STATUSES.has(status);
 }
 
-export function isFilmEpisodeBusy(episode: Pick<EpisodeDetail, "status" | "openRequests">): boolean {
-  return episode.status === "running" || episode.openRequests.length > 0;
+export function isFilmEpisodeBusy(episode: Pick<EpisodeDetail, "status" | "openRequests" | "parts">): boolean {
+  return (
+    episode.status === "running" ||
+    episode.openRequests.length > 0 ||
+    episode.parts.some((part) => part.openRequestCount > 0)
+  );
 }
 
 export function isFilmProjectBusy(project: Pick<FilmProjectDetail, "episodes" | "characters">): boolean {
@@ -267,6 +351,14 @@ export function buildDeleteSceneConfirmation(sceneNumber: number): string {
   return `Delete scene ${sceneNumber}?`;
 }
 
+export function buildDeletePartConfirmation(partNumber: number): string {
+  return `Delete part ${partNumber}?`;
+}
+
+export function buildRewritePartConfirmation(partNumber: number): string {
+  return `Rewrite part ${partNumber}? Its scenes are deleted and written again.`;
+}
+
 export function buildDeleteCharacterConfirmation(characterName: string): string {
   return `Delete character '${characterName}'?`;
 }
@@ -279,8 +371,8 @@ export function buildDeleteVoiceConfirmation(voiceName: string): string {
   return `Delete voice '${voiceName}'?`;
 }
 
-export function toSceneNumber(scene: Pick<Scene, "position">): number {
-  return scene.position + 1;
+export function toSceneNumber(scene: Pick<Scene, "position">, scenesBeforePart: number): number {
+  return scenesBeforePart + scene.position + 1;
 }
 
 export function describeCount(count: number, noun: string): string {
@@ -328,7 +420,7 @@ export function createDefaultProjectDraft(language: FilmLanguage): ProjectSettin
   };
 }
 
-export function buildMakeFilmProjectFields(projectName: string, lookSettings: FilmLookSettings): CreateProjectFields {
+export function buildAnalysisProjectFields(projectName: string, lookSettings: FilmLookSettings): CreateProjectFields {
   const projectDraft = { ...createDefaultProjectDraft(lookSettings.language), ...lookSettings, name: projectName };
   return {
     ...settingsDraftToFields(projectDraft),
@@ -445,6 +537,18 @@ export function createEmptyScenePromptsDraft(defaultClipDurationS: number): Scen
     clipDurationS: String(defaultClipDurationS),
     characterIds: [],
   };
+}
+
+export function createEmptyPartDraft(): PartDraft {
+  return { title: "", plan: "", targetDurationText: "" };
+}
+
+export function partToDraft(part: Pick<EpisodePart, "title" | "plan" | "targetDurationS">): PartDraft {
+  return { title: part.title, plan: part.plan, targetDurationText: String(part.targetDurationS) };
+}
+
+export function partDraftToFields(draft: PartDraft): PartFields {
+  return { title: draft.title, plan: draft.plan, targetDurationS: Number(draft.targetDurationText) };
 }
 
 export function promptsDraftToFields(draft: ScenePromptsDraft): ScenePromptFields {
@@ -565,8 +669,20 @@ function determineStageState(episode: Pick<Episode, "status" | "step">, step: Ep
   return STAGE_STATE_BY_EPISODE_STATUS[episode.status];
 }
 
-function hasSceneMedia(scene: Pick<Scene, "imagePath" | "clipPath">): boolean {
-  return scene.imagePath !== null || scene.clipPath !== null;
+function hasPartMedia(part: Pick<PartCounts, "imagesDone" | "clipsDone">): boolean {
+  return part.imagesDone > 0 || part.clipsDone > 0;
+}
+
+function addPartCounts(total: PartCounts, part: PartCounts): PartCounts {
+  return {
+    sceneCount: total.sceneCount + part.sceneCount,
+    imagesDone: total.imagesDone + part.imagesDone,
+    clipsDone: total.clipsDone + part.clipsDone,
+    narrationDone: total.narrationDone + part.narrationDone,
+    narrationWithText: total.narrationWithText + part.narrationWithText,
+    failedCount: total.failedCount + part.failedCount,
+    openRequestCount: total.openRequestCount + part.openRequestCount,
+  };
 }
 
 function isMediaMissing(status: MediaStatus): boolean {

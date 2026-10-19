@@ -27,6 +27,7 @@ from app.modules.films.assembly_plan import (
     SubtitleCue,
     build_assembly_plan,
     ensure_every_clip_done,
+    ensure_every_part_has_scenes,
     is_music_used,
     is_narration_used,
     to_srt_text,
@@ -39,7 +40,7 @@ from app.modules.films.errors import (
 from app.modules.films.film_access import EpisodeContext
 from app.modules.films.film_files import FilmFiles
 from app.modules.films.film_outputs import FilmOutput, build_output_file_name
-from app.modules.films.models import Scene
+from app.modules.films.models import EpisodePart, Scene
 from app.modules.films.repository import FilmRepository
 from app.modules.films.stage_runner import AssembledFilm
 
@@ -74,6 +75,7 @@ class AssemblerTools:
 @dataclass(frozen=True)
 class _EpisodeInputs:
     context: EpisodeContext
+    parts: Sequence[EpisodePart]
     scenes: Sequence[Scene]
 
 
@@ -90,12 +92,11 @@ class _FinishedFilm:
     work_subtitles_path: Path | None
 
 
-class _BudgetedCommands:
+class _TimedCommands:
     def __init__(self, config: AssemblerConfig, tools: AssemblerTools):
         self._config = config
         self._runner = tools.runner
         self._clock = tools.clock
-        self._deadline_sec = tools.clock() + config.timeout_sec
 
     def run_ffmpeg(self, arguments: Sequence[str], work_dir: Path) -> None:
         self._run([self._config.ffmpeg_bin, *FFMPEG_QUIET_ARGS, *arguments], work_dir)
@@ -105,35 +106,31 @@ class _BudgetedCommands:
         try:
             return ffprobe_json_to_media_facts(stdout)
         except CommandError as error:
-            raise self._to_step_error(error) from error
+            raise _to_failed_error(error) from error
 
     def _run(self, command_args: list[str], work_dir: Path) -> str:
-        remaining_sec = self._deadline_sec - self._clock()
-        if remaining_sec <= 0:
-            raise self._timed_out_error()
+        started_sec = self._clock()
         try:
             return self._runner.run(
-                Command(args=command_args, timeout_sec=remaining_sec, cwd=work_dir)
+                Command(args=command_args, timeout_sec=self._config.timeout_sec, cwd=work_dir)
             )
         except CommandError as error:
-            raise self._to_step_error(error) from error
+            if self._clock() - started_sec >= self._config.timeout_sec:
+                raise EpisodeStepFailedError(
+                    ASSEMBLY_TIMED_OUT_MESSAGE.format(timeout_sec=self._config.timeout_sec)
+                ) from error
+            raise _to_failed_error(error) from error
 
-    def _to_step_error(self, error: CommandError) -> EpisodeStepFailedError:
-        if self._clock() >= self._deadline_sec:
-            return self._timed_out_error()
-        return EpisodeStepFailedError(ASSEMBLY_FAILED_MESSAGE.format(error=error))
 
-    def _timed_out_error(self) -> EpisodeStepFailedError:
-        return EpisodeStepFailedError(
-            ASSEMBLY_TIMED_OUT_MESSAGE.format(timeout_sec=self._config.timeout_sec)
-        )
+def _to_failed_error(error: CommandError) -> EpisodeStepFailedError:
+    return EpisodeStepFailedError(ASSEMBLY_FAILED_MESSAGE.format(error=error))
 
 
 @dataclass(frozen=True)
 class _AssemblySetup:
     config: AssemblerConfig
     files: FilmFiles
-    commands: _BudgetedCommands
+    commands: _TimedCommands
     work_dir: Path
 
 
@@ -274,6 +271,7 @@ class FfmpegEpisodeAssembler:
 
     def assemble(self, episode_id: str) -> AssembledFilm:
         inputs = self._load_inputs(episode_id)
+        ensure_every_part_has_scenes(inputs.parts, inputs.scenes)
         ensure_every_clip_done(inputs.scenes)
         self._config.work_root.mkdir(parents=True, exist_ok=True)
         work_dir = Path(tempfile.mkdtemp(prefix=WORK_DIR_PREFIX, dir=self._config.work_root))
@@ -281,7 +279,7 @@ class FfmpegEpisodeAssembler:
             setup = _AssemblySetup(
                 config=self._config,
                 files=self._tools.files,
-                commands=_BudgetedCommands(self._config, self._tools),
+                commands=_TimedCommands(self._config, self._tools),
                 work_dir=work_dir,
             )
             return _EpisodeAssembly(setup, inputs).run()
@@ -297,5 +295,6 @@ class FfmpegEpisodeAssembler:
             raise FilmProjectNotFoundError(episode.project_id)
         return _EpisodeInputs(
             context=EpisodeContext(project=project, episode=episode),
+            parts=self._tools.repository.find_parts(episode_id),
             scenes=self._tools.repository.find_scenes(episode_id),
         )

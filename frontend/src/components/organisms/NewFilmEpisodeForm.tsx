@@ -26,7 +26,6 @@ import {
   SUBTITLE_STYLE_LABELS,
   TARGET_DURATION_LOWER_LIMIT_S,
   TARGET_LENGTH_HINT,
-  TARGET_DURATION_UPPER_LIMIT_S,
   type NewEpisodeSource,
 } from "@/features/films/constants";
 import { useCreateFilmEpisodeMutation, useEpisodeActionMutation } from "@/features/films/queries";
@@ -156,7 +155,6 @@ export function NewFilmEpisodeForm({ project, isReadOnly }: NewFilmEpisodeFormPr
         label="Target length"
         value={targetDurationText}
         min={TARGET_DURATION_LOWER_LIMIT_S}
-        max={TARGET_DURATION_UPPER_LIMIT_S}
         hint={TARGET_LENGTH_HINT}
         isDisabled={isLocked}
         onChange={setTargetDurationText}

@@ -1,4 +1,4 @@
-import type { Episode, StageState } from "@/features/films/types";
+import type { EpisodeDetail, StageState } from "@/features/films/types";
 import { buildEpisodeStages } from "@/features/films/utils";
 
 const STAGE_MARKER_CLASS_NAMES: Record<StageState, string> = {
@@ -18,13 +18,13 @@ const STAGE_LABEL_CLASS_NAMES: Record<StageState, string> = {
 };
 
 interface FilmStageListProps {
-  episode: Pick<Episode, "status" | "step">;
+  episode: Pick<EpisodeDetail, "status" | "step" | "parts">;
 }
 
 export function FilmStageList({ episode }: FilmStageListProps) {
   return (
     <ol aria-label="Stages" className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      {buildEpisodeStages(episode).map(({ step, label, state }, stageIndex) => (
+      {buildEpisodeStages(episode).map(({ step, label, state, progressLabel }, stageIndex) => (
         <li
           key={step}
           aria-current={state === "current" ? "step" : undefined}
@@ -38,6 +38,7 @@ export function FilmStageList({ episode }: FilmStageListProps) {
           <span className="flex min-w-0 flex-col">
             <span className={`text-sm ${STAGE_LABEL_CLASS_NAMES[state]}`}>{label}</span>
             <span className="text-xs text-muted">{state}</span>
+            {progressLabel && <span className="text-xs text-muted tabular-nums">{progressLabel}</span>}
           </span>
         </li>
       ))}

@@ -14,6 +14,7 @@ from app.modules.films.models import (
     Character,
     EntityType,
     Episode,
+    EpisodePart,
     EpisodeSource,
     EpisodeStep,
     FilmLanguage,
@@ -25,7 +26,8 @@ from app.modules.films.models import (
 )
 from app.modules.films.repository import FilmRepository
 from app.modules.films.script_replies import SCRIPT_REPLY_SCHEMA
-from app.modules.films.script_writer import EpisodeScriptWriter, ScriptWriterTools
+from app.modules.films.script_writer import EpisodeScriptWriter
+from app.modules.films.story_briefs import ScriptWriterTools
 from app.modules.jobs.repository import JobRepository
 from app.modules.jobs.storage import JobStorage
 from app.modules.providers.provider_catalog import ProviderId
@@ -45,11 +47,19 @@ STYLE = Style(
 )
 EXPECTED_IDEA_MESSAGE = (
     "Series: Test Series\n"
-    "Premise: A fishing town hides a drowned city.\n"
-    "Language of narration and dialogue: English\n"
+    "Premise: A fishing town hides a drowned city.\n\n"
+    "Story bible:\n"
+    "Mai keeps the harbor bell.\n\n"
+    "Language of narration and dialogue: English\n\n"
+    "Earlier episodes:\n"
+    "1. The Fog — Mai hears a bell.\n"
+    "Summary: Mai follows the bell to the pier.\n"
+    "3. Harbor Lights\n\n"
+    "Episode idea:\n"
+    "The bell rings again\n\n"
     "Frame: 16:9 landscape\n"
     "Style: Photorealistic — Photorealistic photo.\n\n"
-    "Write scenes whose clip lengths, each minus its first second, add up to about 60s. Give "
+    "Write scenes whose clip lengths, each minus its first second, add up to about 40s. Give "
     "each scene the clip length its action needs, 4-30 s; a typical clip lasts 8s. The first "
     "second of every clip is cut, so a scene's narration must fit in its clip length minus 1 s."
     "\n\n"
@@ -60,15 +70,21 @@ EXPECTED_IDEA_MESSAGE = (
     "Voice: Soft, quick voice\n"
     "Old Harbor (location): A foggy fishing harbor at dawn\n"
     "Reuse these names exactly. Add a character only when the story needs one.\n\n"
-    "Earlier episodes:\n"
-    "1. The Fog — Mai hears a bell.\n"
-    "3. Harbor Lights\n\n"
-    "Episode idea:\n"
-    "The bell rings again"
+    "Episode outline:\n"
+    "1. The Pier: Mai walks to the pier.\n"
+    "2. The Boat: Mai rows out to sea.\n"
+    "3. The Bell: Mai rings the drowned bell.\n"
+    "4. The Return: Mai sails home.\n"
+    "Write part 3 now.\n\n"
+    "Story so far:\n"
+    "1. Mai finds a rope tied to the pier.\n"
+    "2. Mai rows out to sea."
 )
 EXPECTED_PORTRAIT_MESSAGE = (
-    "Series: Test Series\n"
-    "Language of narration and dialogue: Japanese\n"
+    "Series: Test Series\n\n"
+    "Language of narration and dialogue: Japanese\n\n"
+    "Episode idea:\n"
+    "A storm\n\n"
     "Frame: 9:16 portrait\n"
     "Style: Photorealistic — Photorealistic photo.\n\n"
     "Write scenes whose clip lengths, each minus its first second, add up to about 12s. Give "
@@ -77,16 +93,25 @@ EXPECTED_PORTRAIT_MESSAGE = (
     "\n\n"
     "Characters may speak inside clips.\n"
     "Narration: on\n\n"
-    "Episode idea:\n"
-    "A storm"
+    "Episode outline:\n"
+    "1. The Storm: A storm hits the harbor.\n"
+    "Write part 1 now."
 )
 EXPECTED_ANALYSIS_BLOCK = (
     "Adapt this film analysis:\n\n"
     "Character image prompts:\n## Mai\nRed coat\n\n"
     "Character voice prompts:\n## Mai\nSoft\n\n"
     "Scene prompts:\n## Scene 1\nFog\n\n"
-    "Reference frames:\nframe-01.jpg\nframe-02.jpg\n\n"
-    "Extra direction:\nSet it in winter"
+    "Extra direction:\nSet it in winter\n\n"
+    "Frame: 16:9 landscape"
+)
+EXPECTED_FRAMES_ENDING = "Write part 1 now.\n\nReference frames:\nframe-01.jpg\nframe-02.jpg"
+EXPECTED_EMPTY_ANALYSIS_BLOCK = (
+    "Adapt this film analysis:\n\n"
+    "Character image prompts:\n\n\n"
+    "Character voice prompts:\n\n\n"
+    "Scene prompts:\n\n\n"
+    "Frame: 16:9 landscape"
 )
 
 
@@ -135,6 +160,19 @@ def build_episode(**values) -> Episode:
     return Episode(**{**defaults, **values})
 
 
+def build_part(part_id: str, position: int, **values) -> EpisodePart:
+    defaults = {
+        "id": part_id,
+        "episode_id": "e4",
+        "position": position,
+        "title": "The Pier",
+        "plan": "Mai walks to the pier.",
+        "target_duration_s": 60,
+        "recap": None,
+    }
+    return EpisodePart(**{**defaults, **values})
+
+
 def build_scene(image_prompt: str, character_names=(), **values) -> dict:
     return {
         "imagePrompt": image_prompt,
@@ -147,12 +185,9 @@ def build_scene(image_prompt: str, character_names=(), **values) -> dict:
 
 def build_reply(characters=(), scenes=None, **values) -> dict:
     return {
-        "title": "The Bell",
-        "logline": "A bell rings.",
+        "recap": "Mai rings the bell.",
         "characters": list(characters),
         "scenes": [build_scene("s1")] if scenes is None else scenes,
-        "musicPrompt": "Slow cello",
-        "thumbnailPrompt": "A bell in fog",
         **values,
     }
 
@@ -171,7 +206,10 @@ def build_written_character(name: str, reference_frame: str | None = None, **val
 def build_writer(
     tmp_path, episode: Episode, project: FilmProject, cast=(), library=(), choice=CLAUDE_CHOICE
 ):
+    part = build_part("pt1", 0, episode_id=episode.id)
     repository = MagicMock(spec=FilmRepository)
+    repository.find_part.return_value = part
+    repository.find_parts.return_value = [part]
     repository.find_episode.return_value = episode
     repository.find_project.return_value = project
     repository.find_style.return_value = STYLE
@@ -182,7 +220,7 @@ def build_writer(
     repository.find_character_by_name.side_effect = lambda name: library_by_name.get(
         name.casefold()
     )
-    repository.save_script.return_value = True
+    repository.save_part_script.return_value = True
     files = FilmFiles(tmp_path, UPLOAD_MAX_MB)
     analysis_source = AnalysisSource(
         AnalysisSourceTools(files, MagicMock(spec=JobRepository), JobStorage(tmp_path / "jobs", 1))
@@ -209,7 +247,7 @@ def write_file(path: Path, content: bytes) -> Path:
 
 
 def saved_script(parts):
-    return parts.repository.save_script.call_args.args[1]
+    return parts.repository.save_part_script.call_args.args[1]
 
 
 @pytest.fixture
@@ -228,16 +266,33 @@ def idea_request(tmp_path):
             description="A foggy fishing harbor at dawn",
         ),
     ]
-    parts = build_writer(tmp_path, build_episode(), build_project(), cast=cast)
+    project = build_project(story_bible="Mai keeps the harbor bell.")
+    parts = build_writer(tmp_path, build_episode(), project, cast=cast)
     parts.repository.find_episodes.return_value = [
-        build_episode(id="e1", number=1, title="The Fog", logline="Mai hears a bell."),
-        build_episode(id="e2", number=2, title="Episode 2"),
+        build_episode(
+            id="e1",
+            number=1,
+            title="The Fog",
+            logline="Mai hears a bell.",
+            summary="Mai follows the bell to the pier.",
+        ),
+        build_episode(id="e2", number=2, title="Episode 2", summary="Never written."),
         build_episode(id="e3", number=3, title="Harbor Lights"),
         build_episode(),
-        build_episode(id="e5", number=5, title="Later"),
+        build_episode(id="e5", number=5, title="Later", summary="Not yet."),
     ]
     parts.repository.count_scenes_by_episode.return_value = {"e1": 3, "e3": 2, "e5": 4}
-    parts.writer.write_script("e4")
+    third_part = build_part(
+        "pt3", 2, title="The Bell", plan="Mai rings the drowned bell.", target_duration_s=40
+    )
+    parts.repository.find_part.return_value = third_part
+    parts.repository.find_parts.return_value = [
+        build_part("pt1", 0, recap="Mai finds a rope tied to the pier."),
+        build_part("pt2", 1, title="The Boat", plan="Mai rows out to sea."),
+        third_part,
+        build_part("pt4", 3, title="The Return", plan="Mai sails home.", recap="Home again."),
+    ]
+    parts.writer.write_part("pt3")
     return parts.ai_caller.ask_for_json.call_args.args[1]
 
 
@@ -251,8 +306,12 @@ def portrait_request(tmp_path):
         allow_dialogue=True,
         allow_narration=True,
     )
-    parts = build_writer(tmp_path, build_episode(idea="A storm", target_duration_s=12), project)
-    parts.writer.write_script("e4")
+    parts = build_writer(tmp_path, build_episode(idea="A storm"), project)
+    parts.repository.find_part.return_value = build_part(
+        "pt1", 0, title="The Storm", plan="A storm hits the harbor.", target_duration_s=12
+    )
+    parts.repository.find_parts.return_value = [parts.repository.find_part.return_value]
+    parts.writer.write_part("pt1")
     return parts.ai_caller.ask_for_json.call_args.args[1]
 
 
@@ -263,7 +322,7 @@ def normalised_save(tmp_path):
     episode = build_episode(id="e1", number=1, title="Episode 1", target_duration_s=16)
     parts = build_writer(tmp_path, episode, build_project(), cast=[mai], library=[harbor])
     parts.ai_caller.ask_for_json.return_value = build_reply(
-        title="  ",
+        recap="  Mai rings the bell twice.  ",
         characters=[
             build_written_character("MAI"),
             build_written_character("old harbor", entityType="location"),
@@ -280,7 +339,7 @@ def normalised_save(tmp_path):
             build_scene("s5"),
         ],
     )
-    parts.writer.write_script("e1")
+    parts.writer.write_part("pt1")
     script = saved_script(parts)
     return SimpleNamespace(script=script, ferryman=script.new_characters[0], parts=parts)
 
@@ -318,7 +377,7 @@ def analysis_save(tmp_path):
         ],
         scenes=[build_scene("s1", ["Woman in red coat", "mai"])],
     )
-    parts.writer.write_script("e3")
+    parts.writer.write_part("pt1")
     script = saved_script(parts)
     return SimpleNamespace(
         message=parts.ai_caller.ask_for_json.call_args.args[1].message,
@@ -333,7 +392,7 @@ def analysis_save(tmp_path):
 def empty_analysis_message(tmp_path):
     episode = build_episode(source=EpisodeSource.FILM_ANALYSIS, source_job_id="fa-1", idea=None)
     parts = build_writer(tmp_path, episode, build_project())
-    parts.writer.write_script("e4")
+    parts.writer.write_part("pt1")
     return parts.ai_caller.ask_for_json.call_args.args[1].message
 
 
@@ -345,8 +404,8 @@ def dropped_script_files(tmp_path):
     parts.ai_caller.ask_for_json.return_value = build_reply(
         characters=[build_written_character("Woman", "frame-01.jpg")]
     )
-    parts.repository.save_script.return_value = False
-    parts.writer.write_script("e4")
+    parts.repository.save_part_script.return_value = False
+    parts.writer.write_part("pt1")
     return parts.files.to_absolute(saved_script(parts).new_characters[0].reference_path)
 
 
@@ -358,30 +417,30 @@ def failed_save(tmp_path):
     parts.ai_caller.ask_for_json.return_value = build_reply(
         characters=[build_written_character("Woman", "frame-01.jpg")]
     )
-    parts.repository.save_script.side_effect = RuntimeError("database gone")
+    parts.repository.save_part_script.side_effect = RuntimeError("database gone")
     with pytest.raises(RuntimeError) as error:
-        parts.writer.write_script("e4")
+        parts.writer.write_part("pt1")
     copied = parts.files.to_absolute(saved_script(parts).new_characters[0].reference_path)
     return SimpleNamespace(error=error.value, copied=copied)
 
 
-@pytest.fixture(params=["episode", "project"])
+@pytest.fixture(params=["find_part", "find_episode", "find_project"])
 def missing_record_run(request, tmp_path):
     parts = build_writer(tmp_path, build_episode(), build_project())
-    if request.param == "episode":
-        parts.repository.find_episode.return_value = None
-    else:
-        parts.repository.find_project.return_value = None
-    parts.writer.write_script("e4")
+    getattr(parts.repository, request.param).return_value = None
+    parts.writer.write_part("pt1")
     return parts
 
 
 @pytest.fixture
 def claude_failure(tmp_path):
     parts = build_writer(tmp_path, build_episode(), build_project())
+    second_part = build_part("pt2", 1)
+    parts.repository.find_part.return_value = second_part
+    parts.repository.find_parts.return_value = [build_part("pt1", 0), second_part]
     parts.ai_caller.ask_for_json.side_effect = AiCallError("claude failed: Overloaded")
     with pytest.raises(EpisodeStepFailedError) as error:
-        parts.writer.write_script("e4")
+        parts.writer.write_part("pt2")
     return SimpleNamespace(error=error.value, parts=parts)
 
 
@@ -392,7 +451,7 @@ def no_scene_failure(tmp_path):
         scenes=[build_scene(""), build_scene("  ")]
     )
     with pytest.raises(EpisodeStepFailedError) as error:
-        parts.writer.write_script("e4")
+        parts.writer.write_part("pt1")
     return SimpleNamespace(error=error.value, parts=parts)
 
 
@@ -403,7 +462,7 @@ def test_the_call_uses_the_episode_prompt_and_the_fixed_schema(idea_request):
     )
 
 
-def test_the_idea_message_lists_series_rules_cast_earlier_episodes_and_idea(idea_request):
+def test_the_idea_message_carries_the_story_context_outline_and_story_so_far(idea_request):
     assert idea_request.message == EXPECTED_IDEA_MESSAGE
 
 
@@ -426,6 +485,7 @@ def test_new_scenes_start_with_every_status_none_and_the_default_trim(normalised
     assert {
         (
             scene.episode_id,
+            scene.part_id,
             scene.image_status,
             scene.clip_status,
             scene.narration_status,
@@ -433,7 +493,7 @@ def test_new_scenes_start_with_every_status_none_and_the_default_trim(normalised
             scene.trim_end_ms,
         )
         for scene in normalised_save.script.scenes
-    } == {("e1", MediaStatus.NONE, MediaStatus.NONE, MediaStatus.NONE, 1000, None)}
+    } == {("e1", "pt1", MediaStatus.NONE, MediaStatus.NONE, MediaStatus.NONE, 1000, None)}
 
 
 def test_scene_characters_resolve_against_the_cast(normalised_save):
@@ -471,21 +531,22 @@ def test_cast_characters_are_left_unchanged(normalised_save):
     assert normalised_save.script.character_values_by_id == {}
 
 
-def test_the_episode_gets_the_script_texts_and_a_default_title(normalised_save):
-    assert normalised_save.script.episode_values == {
-        "title": "Episode 1",
-        "logline": "A bell rings.",
-        "music_prompt": "Slow cello",
-        "thumbnail_prompt": "A bell in fog",
-    }
+def test_the_part_gets_the_trimmed_recap(normalised_save):
+    assert normalised_save.script.recap == "Mai rings the bell twice."
 
 
-def test_the_script_is_saved_for_its_episode(normalised_save):
-    assert normalised_save.parts.repository.save_script.call_args.args[0] == "e1"
+def test_the_script_is_saved_for_its_part(normalised_save):
+    assert normalised_save.parts.repository.save_part_script.call_args.args[0] is (
+        normalised_save.parts.repository.find_part.return_value
+    )
 
 
 def test_an_analysis_message_adapts_the_copied_analysis(analysis_save):
-    assert analysis_save.message.endswith(EXPECTED_ANALYSIS_BLOCK)
+    assert EXPECTED_ANALYSIS_BLOCK in analysis_save.message
+
+
+def test_an_analysis_message_ends_with_the_copied_frame_names(analysis_save):
+    assert analysis_save.message.endswith(EXPECTED_FRAMES_ENDING)
 
 
 def test_an_analysis_message_has_no_episode_idea(analysis_save):
@@ -543,13 +604,11 @@ def test_new_and_library_characters_are_linked_in_reply_order(analysis_save):
 
 
 def test_a_missing_analysis_copy_sends_empty_sections(empty_analysis_message):
-    assert empty_analysis_message.endswith(
-        "Adapt this film analysis:\n\n"
-        "Character image prompts:\n\n\n"
-        "Character voice prompts:\n\n\n"
-        "Scene prompts:\n\n\n"
-        "Reference frames:\n(none)"
-    )
+    assert EXPECTED_EMPTY_ANALYSIS_BLOCK in empty_analysis_message
+
+
+def test_a_missing_analysis_copy_sends_no_frame_names(empty_analysis_message):
+    assert empty_analysis_message.endswith("Write part 1 now.\n\nReference frames:\n(none)")
 
 
 def test_a_script_that_is_not_saved_removes_its_copied_frames(dropped_script_files):
@@ -564,24 +623,28 @@ def test_a_failed_save_is_raised(failed_save):
     assert str(failed_save.error) == "database gone"
 
 
-def test_a_missing_episode_or_project_calls_nothing(missing_record_run):
+def test_a_missing_part_episode_or_project_calls_nothing(missing_record_run):
     assert not missing_record_run.ai_caller.ask_for_json.called
 
 
-def test_a_claude_failure_is_raised(claude_failure):
-    assert str(claude_failure.error) == "claude failed: Overloaded"
+def test_a_missing_part_episode_or_project_records_no_model(missing_record_run):
+    assert not missing_record_run.repository.save_ai_used.called
+
+
+def test_a_claude_failure_is_raised_with_the_part_number(claude_failure):
+    assert str(claude_failure.error) == "Part 2: claude failed: Overloaded"
 
 
 def test_a_claude_failure_saves_nothing(claude_failure):
-    assert not claude_failure.parts.repository.save_script.called
+    assert not claude_failure.parts.repository.save_part_script.called
 
 
-def test_a_reply_without_scenes_fails(no_scene_failure):
-    assert str(no_scene_failure.error) == "claude returned no scenes"
+def test_a_reply_without_scenes_fails_with_the_part_number(no_scene_failure):
+    assert str(no_scene_failure.error) == "Part 1: claude returned no scenes"
 
 
 def test_a_reply_without_scenes_saves_nothing(no_scene_failure):
-    assert not no_scene_failure.parts.repository.save_script.called
+    assert not no_scene_failure.parts.repository.save_part_script.called
 
 
 @pytest.fixture
@@ -589,15 +652,17 @@ def gemini_episode_run(tmp_path):
     parts = build_writer(tmp_path, build_episode(), build_project(), choice=GEMINI_CHOICE)
     parts.ai_caller.ask_for_json.return_value = build_reply(scenes=[])
     with pytest.raises(EpisodeStepFailedError) as error:
-        parts.writer.write_script("e4")
+        parts.writer.write_part("pt1")
     return SimpleNamespace(error=error.value, parts=parts)
 
 
-def test_the_script_is_asked_of_the_film_script_model_within_its_limits(gemini_episode_run):
-    ai_caller = gemini_episode_run.parts.ai_caller
-    ai_caller.find_model.assert_called_once_with(AiStepGroup.FILM_SCRIPT)
-    choice, _, limits = ai_caller.ask_for_json.call_args.args
-    assert (choice, limits) == (GEMINI_CHOICE, SCRIPT_LIMITS)
+def test_the_script_is_asked_of_the_film_script_model(gemini_episode_run):
+    gemini_episode_run.parts.ai_caller.find_model.assert_called_once_with(AiStepGroup.FILM_SCRIPT)
+
+
+def test_the_script_is_asked_with_the_chosen_model_within_its_limits(gemini_episode_run):
+    call_args = gemini_episode_run.parts.ai_caller.ask_for_json.call_args.args
+    assert (call_args[0], call_args[2]) == (GEMINI_CHOICE, SCRIPT_LIMITS)
 
 
 def test_the_model_is_recorded_before_the_call(gemini_episode_run):
@@ -607,4 +672,4 @@ def test_the_model_is_recorded_before_the_call(gemini_episode_run):
 
 
 def test_a_gemini_reply_without_scenes_names_gemini(gemini_episode_run):
-    assert str(gemini_episode_run.error) == "gemini returned no scenes"
+    assert str(gemini_episode_run.error) == "Part 1: gemini returned no scenes"

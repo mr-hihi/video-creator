@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/atoms/Button";
@@ -11,6 +12,7 @@ import { JobStepProgress } from "@/components/molecules/JobStepProgress";
 import { JobSummary } from "@/components/molecules/JobSummary";
 import { PromptsUsedList } from "@/components/molecules/PromptsUsedList";
 import type { SummaryItem } from "@/components/molecules/SummaryList";
+import { SEND_TO_FILM_STUDIO_LABEL } from "@/features/films/constants";
 import { DELETE_ANALYSIS_CONFIRMATION, UNKNOWN_JOB_FAILURE_MESSAGE } from "@/features/jobs/constants";
 import { useDeleteJobMutation, useJobQuery } from "@/features/jobs/queries";
 import type { JobDetail } from "@/features/jobs/types";
@@ -24,8 +26,8 @@ import {
 import { isNotFoundError } from "@/lib/api/client";
 import { FilmRerunForm } from "./FilmRerunForm";
 import { FilmResultTabs } from "./FilmResultTabs";
-import { MakeFilmForm } from "./MakeFilmForm";
 import { RerunSourceLink } from "./RerunSourceLink";
+import { SendAnalysisToFilmStudioForm } from "./SendAnalysisToFilmStudioForm";
 
 const FILM_ANALYSIS_PATH = "/film-analysis";
 
@@ -57,6 +59,7 @@ function AnalysisNotFound() {
 function FilmAnalysisDetailContent({ job }: { job: JobDetail }) {
   const router = useRouter();
   const deleteJobMutation = useDeleteJobMutation();
+  const [isSendDialogOpen, setIsSendDialogOpen] = useState(false);
 
   function handleDelete() {
     if (!window.confirm(DELETE_ANALYSIS_CONFIRMATION)) return;
@@ -68,8 +71,11 @@ function FilmAnalysisDetailContent({ job }: { job: JobDetail }) {
       <Panel
         title={job.sourceFilename}
         headerAction={
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <JobStatusBadge status={job.status} />
+            <Button disabled={job.status !== "done"} onClick={() => setIsSendDialogOpen(true)}>
+              {SEND_TO_FILM_STUDIO_LABEL}
+            </Button>
             {canDeleteJob(job) && (
               <Button variant="secondary" disabled={deleteJobMutation.isPending} onClick={handleDelete}>
                 Delete
@@ -103,10 +109,8 @@ function FilmAnalysisDetailContent({ job }: { job: JobDetail }) {
           <FilmRerunForm sourceJobId={job.id} />
         </Panel>
       )}
-      {job.status === "done" && (
-        <Panel title="Make a film">
-          <MakeFilmForm job={job} />
-        </Panel>
+      {isSendDialogOpen && (
+        <SendAnalysisToFilmStudioForm job={job} onClose={() => setIsSendDialogOpen(false)} />
       )}
     </div>
   );

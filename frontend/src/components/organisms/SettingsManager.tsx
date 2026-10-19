@@ -1,9 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { TabList } from "@/components/atoms/TabList";
-import { UNSAVED_CHANGES_CONFIRMATION } from "@/features/promptPresets/constants";
 import {
   AI_MODELS_SETTINGS_TAB,
   FILM_CLONE_SETTINGS_TAB,
@@ -13,21 +11,14 @@ import {
   SETTINGS_TAB_OPTIONS,
   type SettingsTab,
 } from "@/features/settings/constants";
-import {
-  buildSettingsPath,
-  isInAppNavigationClick,
-  resolveSettingsTab,
-  updateUnsavedFormKeys,
-} from "@/features/settings/utils";
+import { buildSettingsPath, resolveSettingsTab } from "@/features/settings/utils";
+import { UNSAVED_CHANGES_CONFIRMATION, useUnsavedPageChanges } from "@/lib/unsavedChanges";
 import { AiModelsSettingsForm } from "./AiModelsSettingsForm";
 import { FilmCloneSettingsForm } from "./FilmCloneSettingsForm";
 import { FilmStudioSettingsForm } from "./FilmStudioSettingsForm";
 import { GeneralSettingsForm } from "./GeneralSettingsForm";
 import { PromptPresetManager } from "./PromptPresetManager";
 import { ProviderSettingsPanel } from "./ProviderSettingsPanel";
-
-const NO_UNSAVED_FORM_KEYS: ReadonlySet<string> = new Set();
-const CAPTURE_PHASE_LISTENER_OPTIONS = { capture: true } as const;
 
 interface SettingsManagerProps {
   requestedTab: string | undefined;
@@ -38,14 +29,7 @@ interface SettingsManagerProps {
 export function SettingsManager({ requestedTab, requestedPresetId, requestedProviderId }: SettingsManagerProps) {
   const router = useRouter();
   const selectedTab = resolveSettingsTab(requestedTab);
-  const [unsavedFormKeys, setUnsavedFormKeys] = useState(NO_UNSAVED_FORM_KEYS);
-  const hasUnsavedChanges = unsavedFormKeys.size > 0;
-
-  useUnsavedChangesGuard(hasUnsavedChanges);
-
-  const reportUnsavedChanges = useCallback((formKey: string, hasFormUnsavedChanges: boolean) => {
-    setUnsavedFormKeys((currentFormKeys) => updateUnsavedFormKeys(currentFormKeys, formKey, hasFormUnsavedChanges));
-  }, []);
+  const { hasUnsavedChanges, reportUnsavedChanges } = useUnsavedPageChanges();
 
   function selectTab(tab: SettingsTab) {
     if (tab === selectedTab) return;
@@ -73,21 +57,4 @@ export function SettingsManager({ requestedTab, requestedPresetId, requestedProv
       {selectedTab === FILM_STUDIO_SETTINGS_TAB && <FilmStudioSettingsForm onUnsavedChangesChange={reportUnsavedChanges} />}
     </div>
   );
-}
-
-function useUnsavedChangesGuard(hasUnsavedChanges: boolean) {
-  useEffect(() => {
-    if (!hasUnsavedChanges) return;
-    const warnBeforeUnload = (event: BeforeUnloadEvent) => event.preventDefault();
-    const confirmLeavingThroughLink = (event: MouseEvent) => {
-      if (!isInAppNavigationClick(event) || window.confirm(UNSAVED_CHANGES_CONFIRMATION)) return;
-      event.preventDefault();
-    };
-    window.addEventListener("beforeunload", warnBeforeUnload);
-    window.addEventListener("click", confirmLeavingThroughLink, CAPTURE_PHASE_LISTENER_OPTIONS);
-    return () => {
-      window.removeEventListener("beforeunload", warnBeforeUnload);
-      window.removeEventListener("click", confirmLeavingThroughLink, CAPTURE_PHASE_LISTENER_OPTIONS);
-    };
-  }, [hasUnsavedChanges]);
 }

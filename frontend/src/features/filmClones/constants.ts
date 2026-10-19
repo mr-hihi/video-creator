@@ -224,6 +224,8 @@ export const CLONE_TABS = [
 
 export type CloneTab = (typeof CLONE_TABS)[number]["value"];
 
+export const OPEN_LOCALIZATION_LABEL = "Open Localization";
+
 export const QUEUED_IMAGE_LABEL = "Queued";
 export const GENERATING_IMAGE_LABEL = "Generating…";
 export const FAILED_IMAGE_LABEL_PREFIX = "Failed: ";

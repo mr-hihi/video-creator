@@ -27,6 +27,11 @@ class EpisodeNotFoundError(FilmNotFoundError):
         super().__init__(f"Episode {episode_id} not found")
 
 
+class PartNotFoundError(FilmNotFoundError):
+    def __init__(self, part_id: str):
+        super().__init__(f"Part {part_id} not found")
+
+
 class SceneNotFoundError(FilmNotFoundError):
     def __init__(self, scene_id: str):
         super().__init__(f"Scene {scene_id} not found")

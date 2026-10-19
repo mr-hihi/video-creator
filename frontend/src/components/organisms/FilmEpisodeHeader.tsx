@@ -27,18 +27,19 @@ import {
   buildDeleteEpisodeConfirmation,
   buildFilmProjectPath,
   canRewriteScript,
-  countSceneProgress,
   describeEpisodeNumber,
+  describeEpisodeProgress,
   describePausedNotice,
-  describeSceneProgress,
 } from "@/features/films/utils";
+import { useUnsavedChangesReport } from "@/lib/unsavedChanges";
 
 interface FilmEpisodeHeaderProps {
   project: FilmProjectDetail;
   episode: EpisodeDetail;
+  onClose?: () => void;
 }
 
-export function FilmEpisodeHeader({ project, episode }: FilmEpisodeHeaderProps) {
+export function FilmEpisodeHeader({ project, episode, onClose }: FilmEpisodeHeaderProps) {
   const router = useRouter();
   const projectPath = buildFilmProjectPath(project.id);
   const episodeActionMutation = useEpisodeActionMutation();
@@ -67,9 +68,15 @@ export function FilmEpisodeHeader({ project, episode }: FilmEpisodeHeaderProps) 
       headerAction={
         <div className="flex flex-wrap items-center gap-3">
           <FilmEpisodeStatusBadge status={episode.status} />
-          <Link href={projectPath} className="text-sm text-accent hover:underline">
-            {project.name}
-          </Link>
+          {onClose ? (
+            <Button variant="secondary" onClick={onClose}>
+              Close
+            </Button>
+          ) : (
+            <Link href={projectPath} className="text-sm text-accent hover:underline">
+              {project.name}
+            </Link>
+          )}
           {!isRunning && !isEditingTitle && (
             <Button variant="secondary" disabled={isReadOnly} onClick={() => setIsEditingTitle(true)}>
               Edit title
@@ -105,7 +112,7 @@ export function FilmEpisodeHeader({ project, episode }: FilmEpisodeHeaderProps) 
           <InfoNotice>{describePausedNotice(episode.step)}</InfoNotice>
         )}
         {episode.status === "failed" && <ErrorAlert>{episode.errorMessage ?? UNKNOWN_EPISODE_FAILURE_MESSAGE}</ErrorAlert>}
-        <p className="text-sm tabular-nums">{describeSceneProgress(countSceneProgress(episode.scenes))}</p>
+        <p className="text-sm tabular-nums">{describeEpisodeProgress(episode.parts)}</p>
       </div>
     </Panel>
   );
@@ -120,6 +127,9 @@ function EpisodeTitleForm({ episode, onClose }: EpisodeTitleFormProps) {
   const updateEpisodeMutation = useUpdateFilmEpisodeMutation();
   const [title, setTitle] = useState(episode.title);
   const isSaving = updateEpisodeMutation.isPending;
+  const hasUnsavedChanges = title !== episode.title;
+
+  useUnsavedChangesReport(hasUnsavedChanges);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -140,7 +150,7 @@ function EpisodeTitleForm({ episode, onClose }: EpisodeTitleFormProps) {
           onChange={(event) => setTitle(event.target.value)}
         />
         <div className="flex gap-2">
-          <Button type="submit" disabled={!title.trim() || title === episode.title || isSaving}>
+          <Button type="submit" disabled={!title.trim() || !hasUnsavedChanges || isSaving}>
             Save
           </Button>
           <Button variant="secondary" disabled={isSaving} onClick={onClose}>

@@ -19,7 +19,9 @@ Each answer follows the reply schema and the message the API sends, so every ste
 | Key moments | Up to the asked count, spread over the transcript lines and frame times of the message (or of the window). Title `Mock video title` and a summary naming the model and the line and frame counts for the first window; `Mock title of the part from {mm:ss}` for later windows |
 | Film Analysis passes | Markdown with one `## Mock character {n}` or `## Mock shot {n} — {frame}` heading per item |
 | Clone assets / shots / localization / script | One asset per kind with the attached frames; one shot per frame using the listed assets; the first candidate changed; one scene per listed `shotId` |
-| Film Studio script | Enough scenes of the typical clip length (`durationS`) to fill the asked length, the first cast name (or `Mock Keeper`), the first reference frame, no narration when narration is off |
+| Film Studio outline | `Mock part {k}` parts of up to 600 s that add up to the asked length, with a logline, music and thumbnail prompt |
+| Film Studio part script | A recap and enough scenes of the typical clip length (`durationS`) to fill the part's length, the first cast name (or `Mock Keeper`), the first reference frame, no narration when narration is off |
+| Film Studio story bible | `Mock summary of episode {n}.` and the current story bible plus the line `E{n} — the mock cast moves the story on.` |
 | whisper | One line every 10 s of the WAV, `Mock line at {mm:ss}.` |
 
 Any other schema gets a value filled from the schema itself.

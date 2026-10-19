@@ -7,16 +7,21 @@ from app.common.captcha import require_captcha
 from app.modules.films.episode_service import EpisodeDraft, EpisodeService
 from app.modules.films.film_access import FilmAccess
 from app.modules.films.models import Episode
+from app.modules.films.part_service import PartDraft, PartService
 from app.modules.films.request_values import to_patch_values
 from app.modules.films.scene_service import SceneDraft, SceneService
 from app.modules.films.schemas import (
     CreateEpisodeRequest,
+    CreatePartRequest,
     CreateSceneRequest,
     EditPromptRequest,
     EpisodeDetailResponse,
+    EpisodePartResponse,
     EpisodeResponse,
+    PartDetailResponse,
     SceneResponse,
     UpdateEpisodeRequest,
+    UpdatePartRequest,
     UpdateSceneRequest,
 )
 from app.modules.films.stage_runner import EpisodeStageRunner
@@ -32,6 +37,7 @@ router = APIRouter(prefix="/films", tags=["films"])
 @dataclass(frozen=True)
 class EpisodeRouteServices:
     episodes: EpisodeService
+    parts: PartService
     scenes: SceneService
     stage_runner: EpisodeStageRunner
     access: FilmAccess
@@ -41,6 +47,7 @@ def get_episode_route_services(request: Request) -> EpisodeRouteServices:
     container = request.app.state.container
     return EpisodeRouteServices(
         episodes=container.film_episode_service,
+        parts=container.film_part_service,
         scenes=container.film_scene_service,
         stage_runner=container.film_stage_runner,
         access=container.film_access,
@@ -137,11 +144,49 @@ def rewrite_episode_script(episode_id: str, services: ServicesDependency) -> Epi
     return to_episode_response(services.stage_runner.rewrite_script(context))
 
 
+@router.post("/episodes/{episode_id}/parts", status_code=status.HTTP_201_CREATED)
+def add_part(
+    episode_id: str, body: CreatePartRequest, services: ServicesDependency
+) -> EpisodePartResponse:
+    draft = PartDraft(
+        after_position=body.after_position,
+        title=body.title,
+        plan=body.plan,
+        target_duration_s=body.target_duration_s,
+    )
+    return EpisodePartResponse.model_validate(services.parts.add_part(episode_id, draft))
+
+
+@router.get("/parts/{part_id}")
+def get_part(part_id: str, services: ServicesDependency) -> PartDetailResponse:
+    return PartDetailResponse.from_detail(services.parts.get_part_detail(part_id))
+
+
+@router.patch("/parts/{part_id}")
+def update_part(
+    part_id: str, body: UpdatePartRequest, services: ServicesDependency
+) -> EpisodePartResponse:
+    part = services.parts.update_part(part_id, to_patch_values(body, NO_CLEARED_TEXT_FIELDS))
+    return EpisodePartResponse.model_validate(part)
+
+
+@router.delete("/parts/{part_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_part(part_id: str, services: ServicesDependency) -> None:
+    services.parts.delete_part(part_id)
+
+
+@router.post("/parts/{part_id}/rewrite")
+def rewrite_part(part_id: str, services: ServicesDependency) -> EpisodeResponse:
+    context = services.access.get_part(part_id)
+    return to_episode_response(services.stage_runner.rewrite_part(context))
+
+
 @router.post("/episodes/{episode_id}/scenes", status_code=status.HTTP_201_CREATED)
 def add_scene(
     episode_id: str, body: CreateSceneRequest, services: ServicesDependency
 ) -> SceneResponse:
     draft = SceneDraft(
+        part_id=body.part_id,
         after_position=body.after_position,
         image_prompt=body.image_prompt,
         video_prompt=body.video_prompt,

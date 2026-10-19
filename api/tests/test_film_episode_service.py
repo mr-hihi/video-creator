@@ -2,7 +2,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 import pytest
 
@@ -35,6 +35,7 @@ from app.modules.films.film_imports import FilmImports
 from app.modules.films.models import (
     EntityType,
     Episode,
+    EpisodePart,
     EpisodeSource,
     EpisodeStatus,
     FilmLanguage,
@@ -43,12 +44,13 @@ from app.modules.films.models import (
     Orientation,
     ProjectStatus,
     ReferenceSource,
+    Scene,
     SceneImageSource,
     Style,
     SubtitleStyle,
 )
 from app.modules.films.repository import FilmRepository
-from app.modules.films.views import ThumbnailCandidate
+from app.modules.films.views import PartCounts, PartSummary, ThumbnailCandidate
 from app.modules.jobs.models import Job, JobOutputKind, JobStatus, JobType
 from app.modules.jobs.repository import JobRepository
 from app.modules.jobs.storage import JobStorage
@@ -76,7 +78,12 @@ SNAPSHOT = PresetSnapshot(
     preset_id="preset-1",
     name="Default",
     version=3,
-    prompts=replace(DEFAULT_PRESET_PROMPTS, film_script="SCRIPT PROMPT"),
+    prompts=replace(
+        DEFAULT_PRESET_PROMPTS,
+        film_outline="OUTLINE PROMPT",
+        film_script="SCRIPT PROMPT",
+        story_bible="BIBLE PROMPT",
+    ),
 )
 ANALYSIS_OUTPUTS = {
     JobOutputKind.VIDEO_NOTES: "# Notes",
@@ -316,11 +323,18 @@ def test_an_idea_episode_is_created_as_a_draft_with_the_next_number(idea_creatio
     )
 
 
-def test_the_episode_copies_the_preset_and_its_film_script_prompt(idea_creation):
+def test_the_episode_copies_the_preset_and_its_three_writing_prompts(idea_creation):
     episode = idea_creation.creation.episode
-    assert (episode.preset, episode.film_script_prompt) == (
+    assert (
+        episode.preset,
+        episode.film_outline_prompt,
+        episode.film_script_prompt,
+        episode.story_bible_prompt,
+    ) == (
         {"id": "preset-1", "name": "Default", "version": 3},
+        "OUTLINE PROMPT",
         "SCRIPT PROMPT",
+        "BIBLE PROMPT",
     )
 
 
@@ -349,13 +363,14 @@ def test_a_provider_without_a_key_is_refused_before_the_clone_checks(
     openai_without_key_creation.parts.repository.add_episode.assert_not_called()
 
 
-def test_an_idea_episode_adds_no_character_or_scene(idea_creation):
+def test_an_idea_episode_adds_no_character_part_or_scene(idea_creation):
     creation = idea_creation.creation
-    assert (creation.new_characters, creation.linked_character_ids, creation.scenes) == (
-        (),
-        (),
-        (),
-    )
+    assert (
+        creation.new_characters,
+        creation.linked_character_ids,
+        creation.parts,
+        creation.scenes,
+    ) == ((), (), (), ())
 
 
 def test_the_summary_holds_the_episode_with_its_target(idea_creation):
@@ -383,7 +398,8 @@ ANALYSIS = EpisodeSource.FILM_ANALYSIS
 CLONE = EpisodeSource.FILM_CLONE
 JAPANESE = {"language": FilmLanguage.JAPANESE}
 IDEA_MESSAGE = "Idea must be 1-5000 characters"
-TARGET_MESSAGE = "Target duration must be between 8 and 600 seconds"
+TARGET_MESSAGE = "Target duration must be at least 8 seconds"
+SUMMARY_MESSAGE = "Summary must be at most 10000 characters"
 
 
 @pytest.fixture(
@@ -397,7 +413,6 @@ TARGET_MESSAGE = "Target duration must be between 8 and 600 seconds"
             IDEA_MESSAGE,
         ),
         ({"target_duration_s": 7}, {}, InvalidFilmRequestError, TARGET_MESSAGE),
-        ({"target_duration_s": 601}, {}, InvalidFilmRequestError, TARGET_MESSAGE),
         (
             {"source": ANALYSIS},
             {},
@@ -493,14 +508,15 @@ def test_an_invalid_creation_is_refused_and_adds_nothing(rejected_creation):
     assert rejected_creation.actual == rejected_creation.expected
 
 
-@pytest.fixture
-def longest_target_creation(tmp_path):
+@pytest.fixture(params=[8, 3600])
+def accepted_target_creation(request, tmp_path):
     parts = build_parts(tmp_path, build_project(clip_duration_s=4))
-    return parts.service.create_episode("p1", build_draft(target_duration_s=600))
+    summary = parts.service.create_episode("p1", build_draft(target_duration_s=request.param))
+    return Outcome(summary.episode.target_duration_s, request.param)
 
 
-def test_the_longest_target_is_allowed_whatever_the_clip_length(longest_target_creation):
-    assert longest_target_creation.episode.target_duration_s == 600
+def test_a_target_of_at_least_8_seconds_has_no_upper_limit(accepted_target_creation):
+    assert accepted_target_creation.actual == accepted_target_creation.expected
 
 
 @pytest.fixture
@@ -806,6 +822,68 @@ def test_clone_scene_images_are_copied(clone_creation):
     ] == [b"scene-1", b"scene-2"]
 
 
+def test_clone_scenes_fill_one_part_named_after_their_range(clone_creation):
+    creation = clone_creation.creation
+    assert [
+        (part.episode_id, part.position, part.title, part.plan, part.target_duration_s, part.recap)
+        for part in creation.parts
+    ] == [(creation.episode.id, 0, "Part 1", "Scenes 1-3 of the film clone.", 15, None)]
+
+
+def test_every_clone_scene_belongs_to_the_part(clone_creation):
+    creation = clone_creation.creation
+    assert [scene.part_id for scene in creation.scenes] == [
+        creation.parts[0].id,
+        creation.parts[0].id,
+        creation.parts[0].id,
+    ]
+
+
+LONG_CLONE_SCENE_COUNT = 170
+
+
+@pytest.fixture
+def long_clone_creation(tmp_path):
+    parts = build_parts(tmp_path, build_project(**JAPANESE))
+    parts.clone_repository.find_by_id.side_effect = CLONES.get
+    parts.clone_repository.find_assets.return_value = []
+    parts.clone_repository.find_scenes.return_value = [
+        build_clone_scene(f"cs{index}", index) for index in range(LONG_CLONE_SCENE_COUNT)
+    ]
+    parts.service.create_episode("p1", build_draft(source=CLONE, source_clone_id="k2", idea=None))
+    creation = added_creation(parts)
+    return SimpleNamespace(
+        creation=creation,
+        positions_by_part=[
+            [scene.position for scene in creation.scenes if scene.part_id == part.id]
+            for part in creation.parts
+        ],
+    )
+
+
+def test_a_long_clone_fills_parts_of_80_scenes(long_clone_creation):
+    assert [
+        (part.position, part.title, part.plan, part.target_duration_s, part.recap)
+        for part in long_clone_creation.creation.parts
+    ] == [
+        (0, "Part 1", "Scenes 1-80 of the film clone.", 560, None),
+        (1, "Part 2", "Scenes 81-160 of the film clone.", 560, None),
+        (2, "Part 3", "Scenes 161-170 of the film clone.", 70, None),
+    ]
+
+
+def test_a_long_clone_numbers_scene_positions_within_each_part(long_clone_creation):
+    assert long_clone_creation.positions_by_part == [
+        list(range(80)),
+        list(range(80)),
+        list(range(10)),
+    ]
+
+
+def test_a_long_clone_episode_lasts_every_scene_times_the_kept_clip(long_clone_creation):
+    assert long_clone_creation.creation.episode.target_duration_s == 1190
+
+
 @pytest.fixture
 def failed_clone_creation(tmp_path):
     parts = build_clone_parts(tmp_path)
@@ -853,11 +931,78 @@ def test_a_renumbered_episode_is_returned_as_saved(renumbered_creation):
     assert renumbered_creation.summary.episode is renumbered_creation.reloaded
 
 
+def build_part(part_id: str, position: int) -> EpisodePart:
+    return EpisodePart(
+        id=part_id,
+        episode_id="e2",
+        position=position,
+        title=f"Part {position + 1} title",
+        plan="Mai dives.",
+        target_duration_s=60,
+        recap=None,
+    )
+
+
+def build_scene(scene_id: str, part_id: str, **values) -> Scene:
+    defaults = {
+        "id": scene_id,
+        "episode_id": "e2",
+        "part_id": part_id,
+        "position": 0,
+        "image_prompt": "Mai at the pier",
+        "video_prompt": "0-3s: Mai walks.",
+        "narrator_text": None,
+        "character_ids": [],
+        "clip_duration_s": 8,
+        "image_status": MediaStatus.NONE,
+        "clip_status": MediaStatus.NONE,
+        "narration_status": MediaStatus.NONE,
+    }
+    return Scene(**{**defaults, **values})
+
+
+def build_open_request(request_id: str, kind: GenerationKind, scene_id: str | None):
+    return GenerationRequest(
+        id=request_id,
+        kind=kind,
+        episode_id="e2",
+        scene_id=scene_id,
+        status=GenerationStatus.QUEUED,
+        params={},
+    )
+
+
+DETAIL_PARTS = [build_part("pt1", 0), build_part("pt2", 1), build_part("pt3", 2)]
+DETAIL_SCENES = [
+    build_scene(
+        "s1",
+        "pt1",
+        image_status=MediaStatus.DONE,
+        clip_status=MediaStatus.DONE,
+        narration_status=MediaStatus.DONE,
+        narrator_text="Mai dives.",
+    ),
+    build_scene(
+        "s2",
+        "pt1",
+        image_status=MediaStatus.DONE,
+        clip_status=MediaStatus.FAILED,
+        narrator_text="  ",
+    ),
+    build_scene("s3", "pt1", image_status=MediaStatus.FAILED),
+    build_scene("s4", "pt1", narration_status=MediaStatus.FAILED, narrator_text="The bell rings."),
+    build_scene("s5", "pt2", image_status=MediaStatus.DONE),
+]
+MUSIC_REQUEST = build_open_request("r-music", GenerationKind.MUSIC, None)
+CLIP_REQUEST = build_open_request("r-clip", GenerationKind.SCENE_CLIP, "s1")
+
+
 def build_detail_parts(tmp_path, episode: Episode):
     parts = build_parts(tmp_path)
     parts.repository.find_episode.return_value = episode
-    parts.repository.find_scenes.return_value = ["scene-1"]
-    parts.repository.find_open_requests_for_episode.return_value = ["request-1"]
+    parts.repository.find_parts.return_value = DETAIL_PARTS
+    parts.repository.find_scenes.return_value = DETAIL_SCENES
+    parts.repository.find_open_requests_for_episode.return_value = [MUSIC_REQUEST, CLIP_REQUEST]
     parts.repository.find_latest_requests.return_value = []
     return parts
 
@@ -876,14 +1021,64 @@ def episode_detail(tmp_path):
     return SimpleNamespace(detail=parts.service.get_episode_detail("e2"), parts=parts)
 
 
-def test_the_detail_holds_the_episode_its_project_scenes_and_open_requests(episode_detail):
+def test_the_detail_holds_the_episode_its_project_and_the_requests_not_tied_to_a_scene(
+    episode_detail,
+):
     detail = episode_detail.detail
-    assert (
-        detail.summary.episode.id,
-        detail.project.id,
-        detail.scenes,
-        detail.open_requests,
-    ) == ("e2", "p1", ["scene-1"], ["request-1"])
+    assert (detail.summary.episode.id, detail.project.id, detail.open_requests) == (
+        "e2",
+        "p1",
+        [MUSIC_REQUEST],
+    )
+
+
+def test_the_detail_lists_every_part_with_the_counters_of_its_scenes(episode_detail):
+    assert episode_detail.detail.parts == [
+        PartSummary(
+            DETAIL_PARTS[0],
+            PartCounts(
+                scene_count=4,
+                images_done=2,
+                clips_done=1,
+                narration_done=1,
+                narration_with_text=2,
+                failed_count=3,
+                open_request_count=1,
+            ),
+        ),
+        PartSummary(
+            DETAIL_PARTS[1],
+            PartCounts(
+                scene_count=1,
+                images_done=1,
+                clips_done=0,
+                narration_done=0,
+                narration_with_text=0,
+                failed_count=0,
+                open_request_count=0,
+            ),
+        ),
+        PartSummary(
+            DETAIL_PARTS[2],
+            PartCounts(
+                scene_count=0,
+                images_done=0,
+                clips_done=0,
+                narration_done=0,
+                narration_with_text=0,
+                failed_count=0,
+                open_request_count=0,
+            ),
+        ),
+    ]
+
+
+def test_the_parts_and_scenes_are_read_for_the_episode(episode_detail):
+    repository = episode_detail.parts.repository
+    assert (repository.find_parts.call_args_list, repository.find_scenes.call_args_list) == (
+        [call("e2")],
+        [call("e2")],
+    )
 
 
 def test_thumbnail_candidates_show_the_newest_request_of_each_candidate(episode_detail):
@@ -974,11 +1169,29 @@ def updated_values(parts) -> dict:
         ),
         (
             EpisodeStatus.DRAFT,
-            {"target_duration_s": 700},
+            {"target_duration_s": 7},
+            InvalidFilmRequestError,
+            TARGET_MESSAGE,
+        ),
+        (
+            EpisodeStatus.DRAFT,
+            {"target_duration_s": None},
             InvalidFilmRequestError,
             TARGET_MESSAGE,
         ),
         (EpisodeStatus.DRAFT, {"idea": ""}, InvalidFilmRequestError, IDEA_MESSAGE),
+        (
+            EpisodeStatus.PAUSED,
+            {"summary": "x" * 10001},
+            InvalidFilmRequestError,
+            SUMMARY_MESSAGE,
+        ),
+        (
+            EpisodeStatus.RUNNING,
+            {"summary": "Mai finds the bell."},
+            EpisodeRunningError,
+            "Episode 2 is running — stop it first",
+        ),
     ]
 )
 def rejected_update(request, tmp_path):
@@ -1051,6 +1264,14 @@ def test_an_archived_project_refuses_episode_edits(archived_update_error):
                 "music_error": None,
             },
         ),
+        (EpisodeStatus.DRAFT, {"target_duration_s": 3600}, {"target_duration_s": 3600}),
+        (
+            EpisodeStatus.DONE,
+            {"summary": "  Mai finds the bell.  "},
+            {"summary": "Mai finds the bell."},
+        ),
+        (EpisodeStatus.FAILED, {"summary": "   "}, {"summary": None}),
+        (EpisodeStatus.PAUSED, {"summary": "x" * 10000}, {"summary": "x" * 10000}),
     ]
 )
 def accepted_update(request, tmp_path):

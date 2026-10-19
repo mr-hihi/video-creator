@@ -5,26 +5,22 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from app.modules.ai_models.ai_caller import AiCaller
-from app.modules.ai_models.ai_calls import AiAsk, AiCallError, AiLimits, AiModelChoice, AiStepGroup
+from app.modules.ai_models.ai_calls import AiAsk, AiModelChoice, AiStepGroup
 from app.modules.ai_models.model_choices import to_ai_name
-from app.modules.film_clones.clone_catalog import LANGUAGE_NAMES_BY_CODE
-from app.modules.films.analysis_source import AnalysisSource
 from app.modules.films.errors import EpisodeStepFailedError
-from app.modules.films.film_imports import CharacterSeed, FileCopy, FilmImports, ReferenceFile
+from app.modules.films.film_imports import CharacterSeed, FileCopy, ReferenceFile
 from app.modules.films.film_prompts import to_project_aspect
 from app.modules.films.models import (
     Character,
-    Episode,
-    EpisodeSource,
+    EpisodePart,
     EpisodeStep,
-    FilmProject,
     MediaStatus,
     ReferenceSource,
     Scene,
     Style,
 )
-from app.modules.films.repository import FilmRepository, ScriptSave
+from app.modules.films.part_rules import to_part_number
+from app.modules.films.repository import ScriptSave
 from app.modules.films.scene_resets import DEFAULT_TRIM_START_MS
 from app.modules.films.script_replies import (
     SCRIPT_REPLY_SCHEMA,
@@ -34,44 +30,38 @@ from app.modules.films.script_replies import (
     normalize_script_reply,
     to_character_ids,
 )
+from app.modules.films.story_briefs import (
+    ScriptWriterTools,
+    StoryBrief,
+    StoryBriefs,
+    to_voiced_cast_line,
+)
 from app.modules.films.style_service import get_known_style
 from app.modules.prompt_presets.prompt_texts import (
-    FilmScriptAnalysis,
     FilmScriptRequestText,
     build_film_script_message,
 )
 
 FRAME_LABEL_TEMPLATE = "{aspect} {orientation}"
 STYLE_LINE_TEMPLATE = "{name} — {instruction}"
-CAST_LINE_TEMPLATE = "{name} ({entity_type}): {description}"
-VOICE_SUFFIX_TEMPLATE = ". Voice: {voice_description}"
-EARLIER_EPISODE_TEMPLATE = "{number}. {title}"
-LOGLINE_SUFFIX_TEMPLATE = " — {logline}"
+OUTLINE_LINE_TEMPLATE = "{number}. {title}: {plan}"
+STORY_SO_FAR_LINE_TEMPLATE = "{number}. {story}"
+PART_FAILED_MESSAGE = "Part {number}: {message}"
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
-class ScriptWriterTools:
-    repository: FilmRepository
-    imports: FilmImports
-    analysis_source: AnalysisSource
-    ai_caller: AiCaller
-    limits: AiLimits
-
-
-@dataclass(frozen=True)
-class _ScriptBrief:
-    project: FilmProject
-    episode: Episode
+class _PartBrief:
+    story: StoryBrief
     style: Style
-    cast: Sequence[Character]
-    analysis: FilmScriptAnalysis | None
+    parts: Sequence[EpisodePart]
+    part: EpisodePart
 
 
 @dataclass
 class _CastPlan:
-    brief: _ScriptBrief
+    brief: _PartBrief
     characters_by_name: dict[str, Character]
     new_characters: list[Character] = field(default_factory=list)
     linked_character_ids: list[str] = field(default_factory=list)
@@ -79,115 +69,92 @@ class _CastPlan:
     file_copies: list[FileCopy] = field(default_factory=list)
 
 
-def to_cast_line(character: Character) -> str:
-    line = CAST_LINE_TEMPLATE.format(
-        name=character.name,
-        entity_type=character.entity_type,
-        description=character.description,
-    )
-    if not character.voice_description:
-        return line
-    return line + VOICE_SUFFIX_TEMPLATE.format(voice_description=character.voice_description)
-
-
-def to_earlier_episode_line(episode: Episode) -> str:
-    line = EARLIER_EPISODE_TEMPLATE.format(number=episode.number, title=episode.title)
-    if not episode.logline:
-        return line
-    return line + LOGLINE_SUFFIX_TEMPLATE.format(logline=episode.logline)
-
-
 class EpisodeScriptWriter:
     def __init__(self, tools: ScriptWriterTools):
         self._tools = tools
+        self._briefs = StoryBriefs(tools)
 
-    def write_script(self, episode_id: str) -> None:
-        brief = self._load_brief(episode_id)
+    def write_part(self, part_id: str) -> None:
+        brief = self._load_brief(part_id)
         if brief is None:
             return
-        episode = brief.episode
         choice = self._tools.ai_caller.find_model(AiStepGroup.FILM_SCRIPT)
-        self._tools.repository.save_ai_used(episode.id, EpisodeStep.WRITING_SCRIPT, choice)
-        script = normalize_script_reply(
-            self._ask_for_script(choice, brief),
-            ScriptShape(brief.project.clip_duration_s, episode.number, to_ai_name(choice.provider)),
+        self._tools.repository.save_ai_used(
+            brief.part.episode_id, EpisodeStep.WRITING_SCRIPT, choice
         )
+        try:
+            script = normalize_script_reply(
+                self._ask_for_part(choice, brief),
+                ScriptShape(brief.story.project.clip_duration_s, to_ai_name(choice.provider)),
+            )
+        except EpisodeStepFailedError as error:
+            raise EpisodeStepFailedError(
+                PART_FAILED_MESSAGE.format(
+                    number=to_part_number(brief.part.position), message=error
+                )
+            ) from error
         self._save(script, self._plan_cast(brief, script))
 
-    def _ask_for_script(self, choice: AiModelChoice, brief: _ScriptBrief) -> dict[str, Any]:
-        try:
-            return self._tools.ai_caller.ask_for_json(
-                choice,
-                AiAsk(
-                    instructions=brief.episode.film_script_prompt,
-                    message=build_film_script_message(self._to_request_text(brief)),
-                    reply_schema=SCRIPT_REPLY_SCHEMA,
-                ),
-                self._tools.limits,
-            )
-        except AiCallError as error:
-            raise EpisodeStepFailedError(str(error)) from error
-
-    def _load_brief(self, episode_id: str) -> _ScriptBrief | None:
-        repository = self._tools.repository
-        episode = repository.find_episode(episode_id)
-        project = None if episode is None else repository.find_project(episode.project_id)
-        if episode is None or project is None:
-            return None
-        return _ScriptBrief(
-            project=project,
-            episode=episode,
-            style=get_known_style(repository, project.style_id),
-            cast=repository.find_project_characters(project.id),
-            analysis=self._read_analysis(episode),
+    def _ask_for_part(self, choice: AiModelChoice, brief: _PartBrief) -> dict[str, Any]:
+        return self._briefs.ask(
+            choice,
+            AiAsk(
+                instructions=brief.story.episode.film_script_prompt,
+                message=build_film_script_message(self._to_request_text(brief)),
+                reply_schema=SCRIPT_REPLY_SCHEMA,
+            ),
         )
 
-    def _read_analysis(self, episode: Episode) -> FilmScriptAnalysis | None:
-        if episode.source is not EpisodeSource.FILM_ANALYSIS:
+    def _load_brief(self, part_id: str) -> _PartBrief | None:
+        repository = self._tools.repository
+        part = repository.find_part(part_id)
+        story = None if part is None else self._briefs.load(part.episode_id)
+        if part is None or story is None:
             return None
-        return self._tools.analysis_source.read(episode)
+        return _PartBrief(
+            story=story,
+            style=get_known_style(repository, story.project.style_id),
+            parts=repository.find_parts(part.episode_id),
+            part=part,
+        )
 
-    def _to_request_text(self, brief: _ScriptBrief) -> FilmScriptRequestText:
-        project = brief.project
+    def _to_request_text(self, brief: _PartBrief) -> FilmScriptRequestText:
+        project = brief.story.project
         return FilmScriptRequestText(
-            series_name=project.name,
-            premise=project.description,
-            language_name=LANGUAGE_NAMES_BY_CODE[project.language.value],
+            context=self._briefs.to_context(brief.story),
             frame_label=FRAME_LABEL_TEMPLATE.format(
                 aspect=to_project_aspect(project.orientation), orientation=project.orientation
             ),
             style_line=STYLE_LINE_TEMPLATE.format(
                 name=brief.style.name, instruction=brief.style.style_instruction
             ),
-            target_seconds=str(brief.episode.target_duration_s),
+            target_seconds=str(brief.part.target_duration_s),
             clip_seconds=str(project.clip_duration_s),
             allow_dialogue=project.allow_dialogue,
             allow_narration=project.allow_narration,
-            cast_lines=[to_cast_line(character) for character in brief.cast],
-            earlier_episode_lines=self._find_earlier_episode_lines(brief.episode),
-            idea=brief.episode.idea,
-            analysis=brief.analysis,
+            cast_lines=[to_voiced_cast_line(character) for character in brief.story.cast],
+            outline_lines=[
+                OUTLINE_LINE_TEMPLATE.format(
+                    number=to_part_number(part.position), title=part.title, plan=part.plan
+                )
+                for part in brief.parts
+            ],
+            part_number=str(to_part_number(brief.part.position)),
+            story_so_far_lines=[
+                STORY_SO_FAR_LINE_TEMPLATE.format(
+                    number=to_part_number(part.position), story=part.recap or part.plan
+                )
+                for part in brief.parts
+                if part.position < brief.part.position
+            ],
         )
 
-    def _find_earlier_episode_lines(self, episode: Episode) -> list[str]:
-        earlier_episodes = [
-            earlier
-            for earlier in self._tools.repository.find_episodes(episode.project_id)
-            if earlier.number < episode.number
-        ]
-        scene_counts_by_episode_id = self._tools.repository.count_scenes_by_episode(
-            [earlier.id for earlier in earlier_episodes]
-        )
-        return [
-            to_earlier_episode_line(earlier)
-            for earlier in earlier_episodes
-            if scene_counts_by_episode_id.get(earlier.id, 0)
-        ]
-
-    def _plan_cast(self, brief: _ScriptBrief, script: WrittenScript) -> _CastPlan:
+    def _plan_cast(self, brief: _PartBrief, script: WrittenScript) -> _CastPlan:
         plan = _CastPlan(
             brief=brief,
-            characters_by_name={character.name.casefold(): character for character in brief.cast},
+            characters_by_name={
+                character.name.casefold(): character for character in brief.story.cast
+            },
         )
         for written in script.characters:
             name_key = written.name.casefold()
@@ -215,7 +182,7 @@ class EpisodeScriptWriter:
                 voice_description=written.voice_description,
                 style=plan.brief.style,
                 reference=self._find_frame(written, plan.brief),
-                origin_job_id=plan.brief.episode.source_job_id,
+                origin_job_id=plan.brief.story.episode.source_job_id,
             )
         )
         plan.new_characters.append(planned.character)
@@ -233,26 +200,22 @@ class EpisodeScriptWriter:
         plan.character_values_by_id[character.id] = planned.values
         plan.file_copies.append(planned.file_copy)
 
-    def _find_frame(self, written: WrittenCharacter, brief: _ScriptBrief) -> ReferenceFile | None:
-        if written.reference_frame is None or brief.analysis is None:
+    def _find_frame(self, written: WrittenCharacter, brief: _PartBrief) -> ReferenceFile | None:
+        analysis = brief.story.analysis
+        if written.reference_frame is None or analysis is None:
             return None
         frame_name = Path(written.reference_frame).name
-        if frame_name not in brief.analysis.frame_names:
+        if frame_name not in analysis.frame_names:
             return None
         return ReferenceFile(
-            self._tools.analysis_source.frame_path(brief.episode, frame_name),
+            self._tools.analysis_source.frame_path(brief.story.episode, frame_name),
             ReferenceSource.FILM_ANALYSIS,
         )
 
     def _save(self, script: WrittenScript, plan: _CastPlan) -> None:
-        episode_id = plan.brief.episode.id
+        part = plan.brief.part
         script_save = ScriptSave(
-            episode_values={
-                "title": script.title,
-                "logline": script.logline,
-                "music_prompt": script.music_prompt,
-                "thumbnail_prompt": script.thumbnail_prompt,
-            },
+            recap=script.recap,
             new_characters=plan.new_characters,
             linked_character_ids=plan.linked_character_ids,
             character_values_by_id=plan.character_values_by_id,
@@ -260,14 +223,14 @@ class EpisodeScriptWriter:
         )
         try:
             self._tools.imports.copy_files(plan.file_copies)
-            is_saved = self._tools.repository.save_script(episode_id, script_save)
+            is_saved = self._tools.repository.save_part_script(part, script_save)
         except Exception:
             self._tools.imports.discard_files(plan.file_copies)
             raise
         if not is_saved:
             self._tools.imports.discard_files(plan.file_copies)
             logger.warning(
-                "Episode %s script dropped: episode gone, stopped or scenes exist", episode_id
+                "Part %s script dropped: episode gone or stopped, or part gone or written", part.id
             )
 
     def _to_scenes(self, script: WrittenScript, plan: _CastPlan) -> list[Scene]:
@@ -277,7 +240,8 @@ class EpisodeScriptWriter:
         return [
             Scene(
                 id=str(uuid4()),
-                episode_id=plan.brief.episode.id,
+                episode_id=plan.brief.part.episode_id,
+                part_id=plan.brief.part.id,
                 position=position,
                 image_prompt=written.image_prompt,
                 video_prompt=written.video_prompt,

@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 import pytest
 
 from app.modules.films.errors import EpisodeStepFailedError
@@ -11,8 +13,14 @@ from app.modules.films.script_replies import (
     to_character_ids,
 )
 
-SHAPE = ScriptShape(default_clip_duration_s=8, episode_number=1, ai_name="gemini")
-SIX_SECOND_SHAPE = ScriptShape(default_clip_duration_s=6, episode_number=1, ai_name="gemini")
+SHAPE = ScriptShape(default_clip_duration_s=8, ai_name="gemini")
+SIX_SECOND_SHAPE = ScriptShape(default_clip_duration_s=6, ai_name="gemini")
+
+
+@dataclass(frozen=True)
+class Outcome:
+    actual: object
+    expected: object
 
 
 def build_scene(image_prompt: str, **values) -> dict:
@@ -29,8 +37,6 @@ def build_scene(image_prompt: str, **values) -> dict:
 @pytest.fixture
 def messy_script():
     reply = {
-        "title": "  ",
-        "logline": " Mai hears a bell. ",
         "characters": [
             {"name": "MAI", "entityType": "character", "description": "Mai"},
             {"name": "old harbor", "entityType": "location", "description": "A harbor"},
@@ -50,8 +56,6 @@ def messy_script():
             build_scene("s4"),
             build_scene("s5"),
         ],
-        "musicPrompt": " Slow cello ",
-        "thumbnailPrompt": "",
     }
     return normalize_script_reply(reply, SHAPE)
 
@@ -59,7 +63,6 @@ def messy_script():
 @pytest.fixture
 def bare_script():
     reply = {
-        "title": "T" * 200,
         "characters": [
             "not a mapping",
             {"name": "Lantern", "entityType": " Visual_Asset ", "referenceFrame": "f.jpg"},
@@ -72,6 +75,20 @@ def bare_script():
         ],
     }
     return normalize_script_reply(reply, SHAPE)
+
+
+@pytest.fixture(
+    params=[
+        (" Mai rings the bell. ", "Mai rings the bell."),
+        ("r" * 5001, "r" * 5000),
+        ("   ", None),
+        (42, None),
+    ]
+)
+def recap_outcome(request):
+    recap, expected = request.param
+    script = normalize_script_reply({"recap": recap, "scenes": [build_scene("s1")]}, SHAPE)
+    return Outcome(actual=script.recap, expected=expected)
 
 
 @pytest.fixture
@@ -132,16 +149,8 @@ def test_scene_character_names_are_kept_raw_for_resolution(messy_script):
     )
 
 
-def test_blank_title_falls_back_to_the_episode_number(messy_script):
-    assert messy_script.title == "Episode 1"
-
-
-def test_texts_are_trimmed_and_blank_ones_are_null(messy_script):
-    assert (messy_script.logline, messy_script.music_prompt, messy_script.thumbnail_prompt) == (
-        "Mai hears a bell.",
-        "Slow cello",
-        None,
-    )
+def test_the_recap_is_trimmed_cut_to_5000_and_null_when_blank(recap_outcome):
+    assert recap_outcome.actual == recap_outcome.expected
 
 
 def test_characters_with_a_name_are_kept_with_defaults(messy_script):
@@ -152,12 +161,8 @@ def test_characters_with_a_name_are_kept_with_defaults(messy_script):
     )
 
 
-def test_a_long_title_is_cut_to_150(bare_script):
-    assert bare_script.title == "T" * 150
-
-
-def test_missing_texts_are_null(bare_script):
-    assert (bare_script.logline, bare_script.music_prompt) == (None, None)
+def test_a_missing_recap_is_null(bare_script):
+    assert bare_script.recap is None
 
 
 def test_a_repeated_character_name_keeps_the_first_entry(bare_script):
@@ -187,14 +192,7 @@ def test_scene_names_resolve_case_insensitively_without_unknowns_or_repeats(reso
 
 
 def test_the_reply_schema_requires_the_fixed_shape():
-    assert SCRIPT_REPLY_SCHEMA["required"] == [
-        "title",
-        "logline",
-        "characters",
-        "scenes",
-        "musicPrompt",
-        "thumbnailPrompt",
-    ]
+    assert SCRIPT_REPLY_SCHEMA["required"] == ["recap", "characters", "scenes"]
 
 
 def test_every_scene_of_the_reply_states_its_clip_length():

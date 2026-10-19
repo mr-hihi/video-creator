@@ -105,7 +105,8 @@ A provider is **set up** when: `api` → a key is stored and can be decrypted; `
   generation. The request keeps its one slot and the model of its first segment; `params.segment` /
   `params.segments` show the progress, `params.segmentLengths` the plan. How a segment starts and what a
   failure keeps: 4.3 § Segments.
-- A `music` request asks for at most the model's longest track (7.5); a shorter track plays once (4.4).
+- A `music` request asks for at most the model's longest track (7.5); a shorter track loops until the film
+  ends (4.4).
 
 ## 7.2 Routing
 

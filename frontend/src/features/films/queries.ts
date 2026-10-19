@@ -10,11 +10,15 @@ import type {
   EpisodeAction,
   EpisodeChanges,
   EpisodeDetail,
+  EpisodePart,
   FilmCharacter,
   FilmCharacterDetail,
   FilmProject,
   FilmProjectDetail,
   FilmStyle,
+  PartChanges,
+  PartDetail,
+  PartFields,
   ProjectChanges,
   ProjectStatus,
   Scene,
@@ -97,8 +101,20 @@ export interface ChooseThumbnailRequest {
   candidate: number;
 }
 
+export interface CreatePartRequest {
+  episodeId: string;
+  afterPosition?: number;
+  fields: PartFields;
+}
+
+export interface UpdatePartRequest {
+  partId: string;
+  changes: PartChanges;
+}
+
 export interface CreateSceneRequest {
   episodeId: string;
+  partId: string;
   afterPosition?: number;
   fields: ScenePromptFields;
 }
@@ -136,6 +152,7 @@ export const filmQueryKeys = {
   voices: () => [...filmQueryKeys.all, "voices"] as const,
   episodes: () => [...filmQueryKeys.all, "episodes"] as const,
   episodeDetail: (episodeId: string) => [...filmQueryKeys.episodes(), "detail", episodeId] as const,
+  partDetail: (partId: string) => [...filmQueryKeys.episodes(), "part", partId] as const,
 };
 
 const filmMutationKeys = {
@@ -468,13 +485,61 @@ export function useChooseThumbnailMutation() {
   });
 }
 
+export function useFilmPartQuery(partId: string, isEpisodeBusy: boolean) {
+  return useQuery({
+    queryKey: filmQueryKeys.partDetail(partId),
+    queryFn: ({ signal }) => apiFetch<PartDetail>(buildPartPath(partId), { signal }),
+    refetchInterval: (query) => {
+      const part = query.state.data;
+      return isEpisodeBusy || (part && part.openRequests.length > 0) ? FILM_STUDIO_REFRESH_INTERVAL_MS : false;
+    },
+  });
+}
+
+export function useCreateFilmPartMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ episodeId, afterPosition, fields }: CreatePartRequest) =>
+      apiFetch<EpisodePart>(`${buildEpisodePath(episodeId)}/parts`, {
+        method: "POST",
+        body: JSON.stringify({ ...fields, afterPosition }),
+      }),
+    onSuccess: () => invalidateEpisodesAndProjects(queryClient),
+  });
+}
+
+export function useUpdateFilmPartMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ partId, changes }: UpdatePartRequest) =>
+      apiFetch<EpisodePart>(buildPartPath(partId), { method: "PATCH", body: JSON.stringify(changes) }),
+    onSuccess: () => invalidateEpisodesAndProjects(queryClient),
+  });
+}
+
+export function useDeleteFilmPartMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (partId: string) => apiFetch<void>(buildPartPath(partId), { method: "DELETE" }),
+    onSuccess: () => invalidateEpisodesAndProjects(queryClient),
+  });
+}
+
+export function useRewriteFilmPartMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (partId: string) => apiFetch<Episode>(`${buildPartPath(partId)}/rewrite`, { method: "POST" }),
+    onSuccess: () => invalidateEpisodesAndProjects(queryClient),
+  });
+}
+
 export function useCreateFilmSceneMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ episodeId, afterPosition, fields }: CreateSceneRequest) =>
+    mutationFn: ({ episodeId, partId, afterPosition, fields }: CreateSceneRequest) =>
       apiFetch<Scene>(`${buildEpisodePath(episodeId)}/scenes`, {
         method: "POST",
-        body: JSON.stringify({ ...fields, afterPosition }),
+        body: JSON.stringify({ ...fields, partId, afterPosition }),
       }),
     onSuccess: () => invalidateEpisodesAndProjects(queryClient),
   });
@@ -619,6 +684,10 @@ function buildVoicePath(voiceId: string): string {
 
 function buildEpisodePath(episodeId: string): string {
   return `${FILMS_API_PATH}/episodes/${encodeURIComponent(episodeId)}`;
+}
+
+function buildPartPath(partId: string): string {
+  return `${FILMS_API_PATH}/parts/${encodeURIComponent(partId)}`;
 }
 
 function buildScenePath(sceneId: string): string {
