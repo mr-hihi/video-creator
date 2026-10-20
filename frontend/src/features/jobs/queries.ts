@@ -25,11 +25,11 @@ export interface CreateYoutubeToMarkdownJobRequest {
 }
 
 export interface CreateFilmAnalysisJobRequest extends CreateVideoToMarkdownJobRequest {
-  maxFrames: number;
+  maxFrames?: number;
 }
 
 export interface CreateYoutubeFilmAnalysisJobRequest extends CreateYoutubeToMarkdownJobRequest {
-  maxFrames: number;
+  maxFrames?: number;
 }
 
 export interface CreateFilmAnalysisRerunJobRequest {
@@ -125,7 +125,7 @@ function createVideoToMarkdownJob(request: CreateVideoToMarkdownJobRequest): Pro
 
 function createFilmAnalysisJob(request: CreateFilmAnalysisJobRequest): Promise<Job> {
   const formData = buildUploadFormData(request);
-  formData.append("maxFrames", String(request.maxFrames));
+  if (request.maxFrames !== undefined) formData.append("maxFrames", String(request.maxFrames));
   return uploadJobSource("/jobs/film-analysis", formData, request);
 }
 

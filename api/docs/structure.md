@@ -30,7 +30,7 @@ api/
 | Module | Owns |
 | --- | --- |
 | `jobs/` | `jobs`, `job_outputs`, the job types and their pipelines (domains 1, 3) |
-| `ai_models/` | `AiCaller` and its Claude CLI, Gemini and OpenAI clients, the shared SSE reading and image encoding, the step-model lookup and set-up check, the `aiUsed` response shape (domain 8) |
+| `ai_models/` | `AiCaller` and its Claude CLI, Gemini and OpenAI clients, the Gemini Files API transport for audio and video parts (`gemini_files.py`), the shared SSE reading and image encoding, the step-model lookup with the set-up and Google AI checks, the `aiUsed` response shape (domain 8) |
 | `prompt_presets/` | presets, versions, the default prompts and the text the app appends (domain 2) |
 | `app_settings/` | `app_settings` (domain 6); the `PATCH /settings/ai-models` save (`ai_model_service.py`, `schemas.py`), which also writes `provider_routes` and `providers.models` (A14) |
 | `providers/` | `providers`, `provider_routes`, catalog, encrypted keys, connection test (domain 7) |

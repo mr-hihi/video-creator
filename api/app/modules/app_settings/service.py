@@ -12,6 +12,7 @@ from app.modules.app_settings.setting_rules import (
     AI_MODEL_KEY,
     AI_STEP_MODELS_KEY,
     DEFAULT_VALUES_BY_KEY,
+    FILM_ANALYSIS_INPUT_MODE_KEY,
     FILM_CLONE_INPUT_MODE_KEY,
     FILM_STUDIO_CLIP_PROVIDER_KEY,
     IMAGE_PROVIDER_KEY_BY_FEATURE,
@@ -49,6 +50,9 @@ class AppSettingService:
 
     def get_input_mode(self) -> InputMode:
         return InputMode(self.get_settings()[INPUT_MODE_KEY])
+
+    def get_film_analysis_input_mode(self) -> InputMode:
+        return InputMode(self.get_settings()[FILM_ANALYSIS_INPUT_MODE_KEY])
 
     def get_film_clone_input_mode(self) -> InputMode:
         return InputMode(self.get_settings()[FILM_CLONE_INPUT_MODE_KEY])

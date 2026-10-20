@@ -30,15 +30,15 @@ Test cases for [business/8-ai-models.md](../business/8-ai-models.md). Acronym `A
   1. `curl -s S`
   2. Navigate to http://localhost:5071/settings?tab=ai-models
   3. Select `Gemini 3.8 Flash` from `All steps`; select `GPT-6 Astra` from `Film clone`
-  4. Select `Whole video` from `Input mode`; click `Save`
+  4. Select `Whole video` from `Video to Markdown input`; click `Save`
   5. Reload the page; `curl -s S`
   6. Click `General` in the warning under `All steps`
 - **Expected:**
-  - Step 1: `aiModel` = `CLI`; `aiStepModels` = `{"moments":null,"filmAnalysis":null,"filmScript":null,"filmClone":null}`; `inputMode` = `subtitles`; `filmCloneInputMode` = `subtitles`
-  - Step 2: tab `AI models` opens with the group `Text`: `All steps` = `Claude (CLI default)` and its hint `The model of every step set to Same as all steps.`, `Apply to all steps` disabled, rows `Key moments`, `Film analysis`, `Film script`, `Film clone` each = `Same as all steps (Claude (CLI default))` with their hints, then `Input mode` = `Subtitles` with the hint `For Video to Markdown and Film Analysis. Subtitles: the model reads the transcript to pick key moments. Whole video: it also sees one frame per second — slower, with more calls on long videos.`; then the groups `Images`, `Clips`, `Speech`, `Music`; `Save` is disabled
-  - Step 3: `Key moments`, `Film analysis` and `Film script` read `Same as all steps (Gemini 3.8 Flash)`, `Film clone` reads `GPT-6 Astra`; warning `Google AI (Gemini, Veo) is not set up — add its key in General.` under `All steps`, `OpenAI is not set up — add its key in General.` under `Film clone`, none under the other rows; `Apply to all steps` and `Save` are enabled
+  - Step 1: `aiModel` = `CLI`; `aiStepModels` = `{"moments":null,"audio":null,"filmAnalysis":null,"filmScript":null,"filmClone":null}`; `inputMode`, `filmAnalysisInputMode` and `filmCloneInputMode` = `subtitles`
+  - Step 2: tab `AI models` opens with the group `Text`: `All steps` = `Claude (CLI default)` and its hint `The model of every step set to Same as all steps.`, `Apply to all steps` disabled, rows `Key moments`, `Audio`, `Film analysis`, `Film script`, `Film clone` each = `Same as all steps (Claude (CLI default))` with their hints, then `Video to Markdown input` = `Subtitles` and `Film Analysis input` = `Subtitles`, each with its hint of 8.4; no Google AI warning; then the groups `Images`, `Clips`, `Speech`, `Music`; `Save` is disabled
+  - Step 3: `Key moments`, `Audio`, `Film analysis` and `Film script` read `Same as all steps (Gemini 3.8 Flash)`, `Film clone` reads `GPT-6 Astra`; warning `Google AI (Gemini, Veo) is not set up — add its key in General.` under `All steps`, `OpenAI is not set up — add its key in General.` under `Film clone`, none under the other rows; `Apply to all steps` and `Save` are enabled
   - Step 4: notice `Saved`
-  - Step 5: the same selections; body has `"aiModel":G38`, `"aiStepModels":{"moments":null,"filmAnalysis":null,"filmScript":null,"filmClone":OA}`, `"inputMode":"whole_video"`, `"filmCloneInputMode":"subtitles"`
+  - Step 5: the same selections; body has `"aiModel":G38`, `"aiStepModels":{"moments":null,"audio":null,"filmAnalysis":null,"filmScript":null,"filmClone":OA}`, `"inputMode":"whole_video"`, `"filmAnalysisInputMode":"subtitles"`, `"filmCloneInputMode":"subtitles"`
   - Step 6: URL becomes `/settings?tab=general&provider=google`; tab `General` open with sub-tab `Google AI (Gemini, Veo)` selected
 
 ### TC-AIM-02: Setting validation
@@ -53,6 +53,10 @@ Test cases for [business/8-ai-models.md](../business/8-ai-models.md). Acronym `A
   7. `PATCH S` `{"aiModel":G38}` while the `google` provider has no key
   8. `PATCH S` `{"filmCloneInputMode":"frames"}`
   9. `curl -i -X PATCH S/ai-models -H 'Content-Type: application/json' -d '{"aiModel":{"provider":"google","model":"gpt-6-astra"}}'`
+  10. `PATCH S` `{"inputMode":"full_video"}`
+  11. `PATCH S` `{"filmCloneInputMode":"full_video"}`
+  12. `PATCH S` `{"filmAnalysisInputMode":"frames"}`
+  13. `PATCH S` `{"filmAnalysisInputMode":"full_video","aiStepModels":{"audio":CLI,"filmAnalysis":OA}}` while `openai` has no key
 - **Expected:**
   1. `HTTP 400`, `detail` = `Invalid value for 'aiModel'`
   2. `HTTP 400`, `detail` = `Invalid value for 'aiModel'`
@@ -63,6 +67,10 @@ Test cases for [business/8-ai-models.md](../business/8-ai-models.md). Acronym `A
   7. `HTTP 200`, `aiModel` = `G38`
   8. `HTTP 400`, `detail` = `Invalid value for 'filmCloneInputMode'`
   9. `HTTP 400`, `detail` = `Invalid value for 'aiModel'`
+  10. `HTTP 400`, `detail` = `Invalid value for 'inputMode'` — `full_video` is Film Analysis only
+  11. `HTTP 400`, `detail` = `Invalid value for 'filmCloneInputMode'`
+  12. `HTTP 400`, `detail` = `Invalid value for 'filmAnalysisInputMode'`
+  13. `HTTP 200` — a model that is not Google AI, or not set up, saves; the run is refused at creation (TC-AIM-26)
 
 ### TC-AIM-03: The model is read at each call, the input mode at creation
 - **App:** API + API unit
@@ -104,7 +112,7 @@ Test cases for [business/8-ai-models.md](../business/8-ai-models.md). Acronym `A
   4. Click `Change`
 - **Expected:**
   - Step 1: above `Upload and convert`, the line `AI: Claude (CLI default) · Input: Whole video` with the link `Change`
-  - Step 2: `New analysis`: `AI: Key moments — Claude (CLI default) · Film analysis — Gemini 4 Argon · Input: Whole video`; `New clone`: `AI: Claude (CLI default) · Input: Subtitles` — its `Input` reads `filmCloneInputMode`; `Rerun with another preset`: `AI: Gemini 4 Argon`; the `Send to Film Studio` dialog and `New episode`: `AI: Claude (CLI default)`
+  - Step 2: `New analysis`: `AI: Key moments — Claude (CLI default) · Film analysis — Gemini 4 Argon · Input: Subtitles` — its `Input` reads `filmAnalysisInputMode`; `New clone`: `AI: Claude (CLI default) · Input: Subtitles` — its `Input` reads `filmCloneInputMode`; `Rerun with another preset`: `AI: Gemini 4 Argon`; the `Send to Film Studio` dialog and `New episode`: `AI: Claude (CLI default)`
   - Step 3: the line reads `AI: GPT-6 Astra — not set up · Input: Whole video`; `Upload and convert` is disabled with the hint `Add the OpenAI key in Settings → General.`
   - Step 4: URL becomes `/settings?tab=ai-models`
 
@@ -197,15 +205,16 @@ Test cases for [business/8-ai-models.md](../business/8-ai-models.md). Acronym `A
 
 ### TC-AIM-12: Step order and clean-up
 - **App:** API unit
-- **Steps:** with `inputMode` = `whole_video` and faked tools:
+- **Steps:** with `inputMode` and `filmAnalysisInputMode` = `whole_video`, `aiStepModels.audio` = `G38` and
+  faked tools, the faked Gemini answering `listening_to_audio` with no speaker and no sound:
   1. Run a `video_to_markdown` job
   2. Run a `youtube_film_analysis` job
   3. Run a `video_to_markdown` job whose second of three windows fails with `claude failed: Overloaded`
   4. Run a `video_to_markdown` job whose whisper output has no segment
   5. Requeue a job stopped during `picking_moments`, then let it run
 - **Expected:**
-  1. Steps `extracting_audio`, `transcribing`, `sampling_frames`, `picking_moments`, `capturing_frames`, `writing_markdown`; `samples/` gone before `capturing_frames` starts; `output/images/` holds only the captured moments
-  2. Steps `fetching_transcript`, `downloading_video`, `sampling_frames`, `picking_moments`, `detecting_scenes`, `capturing_frames`, `writing_markdown`, then the three prompt passes; `downloading_video` runs once
+  1. Steps `extracting_audio`, `transcribing`, `sampling_frames`, `picking_moments`, `capturing_frames`, `writing_markdown` — no `listening_to_audio`, no Gemini request; `samples/` gone before `capturing_frames` starts; `output/images/` holds only the captured moments
+  2. Steps `fetching_transcript`, `downloading_video`, `listening_to_audio`, `sampling_frames`, `picking_moments`, `detecting_scenes`, `capturing_frames`, `writing_markdown`, then the three prompt passes; `downloading_video` runs once and asks `yt-dlp` for the audio too
   3. `failed` at `picking_moments`, `error_message` = `claude failed: Overloaded`; no moment saved; the third window is never called; `samples/` gone
   4. `failed` at `transcribing` with `No speech was detected in the video`; `sampling_frames` never starts
   5. Samples left by the stopped run are removed before sampling starts again; the run writes each sample once
@@ -225,15 +234,120 @@ Test cases for [business/8-ai-models.md](../business/8-ai-models.md). Acronym `A
 ### TC-AIM-14: Gemini film analysis, end to end (live, spends credit)
 - **App:** Frontend
 - **Precondition:** A working Google AI key saved on the `Google AI (Gemini, Veo)` sub-tab of `General`; `PATCH S`
-  `{"aiModel":G38,"aiStepModels":{},"inputMode":"whole_video"}`. Remove the key after the case.
+  `{"aiModel":G38,"aiStepModels":{},"filmAnalysisInputMode":"whole_video"}`. Remove the key after the case.
 - **Steps:**
   1. Navigate to http://localhost:5071/film-analysis; switch to `YouTube link`; fill V2's link; select `English`; fill `Max frames` with `20`; click `Analyze`
   2. Wait for `done`
   3. Open each result tab
 - **Expected:**
-  - Step 1: the form line reads `AI: Gemini 3.8 Flash · Input: Whole video`; URL becomes `/film-analysis/{id}`
-  - Step 2: steps `Fetching YouTube transcript`, `Downloading video`, `Sampling frames`, `Picking key moments`, `Detecting scene changes`, `Capturing frames`, `Writing Markdown`, then the three prompt passes; summary `AI` lists `Picking key moments` and the three passes, each `Gemini 3.8 Flash`; `Input` = `Whole video`; `Frames` shows at most 10 dialogue frames
-  - Step 3: `Character image prompts`, `Character voice prompts`, `Scene prompts` and `Video notes` all have content, each `##` heading per character or shot
+  - Step 1: the form line reads `AI: Gemini 3.8 Flash · Input: Frame image + audio`; URL becomes `/film-analysis/{id}`
+  - Step 2: steps `Fetching YouTube transcript`, `Downloading video`, `Listening to the audio`, `Sampling frames`, `Picking key moments`, `Detecting scene changes`, `Capturing frames`, `Writing Markdown`, then the three prompt passes; summary `AI` lists `Listening to the audio`, `Picking key moments` and the three passes, each `Gemini 3.8 Flash`; `Input` = `Frame image + audio`; `Frames` reads `{d} dialogue + {s} sounds + {c} scene changes` with d ≤ 10 and d + s + c ≤ 20
+  - Step 3: `Character image prompts`, `Character voice prompts`, `Scene prompts` and `Video notes` all have content, each `##` heading per character or shot; `Video notes` has a `Speakers:` list and `**{name}:**` lines
+
+## Frame image + audio and Full video
+
+### TC-AIM-25: Film Analysis input and the Google AI warnings
+- **App:** Frontend + API
+- **Precondition:** `PATCH S` `{"aiModel":CLI,"aiStepModels":{}}`.
+- **Steps:**
+  1. Navigate to http://localhost:5071/settings?tab=ai-models; select `Frame image + audio` from `Film Analysis input`
+  2. Select `Full video` from `Film Analysis input`
+  3. Select `Gemini 3.8 Flash` from `Film analysis`; click `Save`; `curl -s S`
+  4. Click tab `Film Clone`; select `Frame image + audio` from `Input mode`
+- **Expected:**
+  - Step 1: under `Audio`, `Frame image + audio needs a Google AI model here.`; nothing saved yet
+  - Step 2: that warning is gone; under `Film analysis`, `Full video needs a Google AI model here.`
+  - Step 3: the `Film analysis` warning is gone; notice `Saved`; body has `"filmAnalysisInputMode":"full_video"`, `"aiStepModels":{"moments":null,"audio":null,"filmAnalysis":G38,"filmScript":null,"filmClone":null}`, `"inputMode":"subtitles"`
+  - Step 4: under `Input mode`, `Frame image + audio needs a Google AI model here.`, read from the saved `Audio` model
+
+### TC-AIM-26: A group that needs Google AI is refused at creation
+- **App:** API
+- **Precondition:** `PATCH PV/google` `{"apiKey":"AIza-test-0000000000wxyz"}`. A `done` `full_video` Film Analysis job A2
+  (TC-FA-25).
+- **Steps:**
+  1. `PATCH S` `{"aiModel":CLI,"aiStepModels":{},"filmAnalysisInputMode":"whole_video","filmCloneInputMode":"whole_video"}`; send `POST /jobs/film-analysis` with F1, `POST /film-clones` with F1
+  2. `PATCH S` `{"filmAnalysisInputMode":"full_video"}`; send `POST /jobs/film-analysis` with F1, `POST /jobs/youtube-film-analysis` with V2, `POST /jobs/{A2}/film-analysis-rerun` `{}`
+  3. `PATCH S` `{"inputMode":"whole_video"}`; send `POST /jobs/video-to-markdown` with F1
+  4. `PATCH S` `{"aiStepModels":{"audio":G38,"filmAnalysis":G38}}`; repeat the requests of steps 1 and 2
+- **Expected:**
+  - Step 1: both `HTTP 409`, `detail` = `Audio needs a Google AI model — open Settings`; no job, no clone
+  - Step 2: all three `HTTP 409`, `detail` = `Film analysis needs a Google AI model — open Settings`
+  - Step 3: `HTTP 201` — Video to Markdown does not use `Audio`
+  - Step 4: every request `HTTP 201`
+
+### TC-AIM-27: The AI line when a group needs Google AI
+- **App:** Frontend
+- **Precondition:** `PATCH S` `{"aiModel":CLI,"aiStepModels":{},"filmAnalysisInputMode":"full_video","filmCloneInputMode":"whole_video"}`.
+- **Steps:**
+  1. Navigate to http://localhost:5071/film-analysis; drop F1 on `Film`
+  2. Navigate to http://localhost:5071/film-clone; drop F1 on `Film`
+- **Expected:**
+  - Step 1: `AI: Film analysis — Claude (CLI default) — needs Google AI · Input: Full video`; `Max frames` is not shown; `Analyze` disabled with the hint `Pick a Google AI model for Film analysis in Settings → AI models.`
+  - Step 2: `AI: Key moments — Claude (CLI default) · Audio — Claude (CLI default) — needs Google AI · Film clone — Claude (CLI default) · Input: Frame image + audio`; `Max frames` shown; `Clone` disabled with the hint `Pick a Google AI model for Audio in Settings → AI models.`
+
+### TC-AIM-28: listening_to_audio — parts, messages and clean-up
+- **App:** API unit
+- **Precondition:** `AI_MEDIA_PART_SEC` = 1800; `aiStepModels.audio` = `G38`; faked Gemini HTTP recording every
+  request, answering part 1 with speakers `Mai` (`young woman, soft voice`) and `Long`, part 2 with `Mai` and
+  `Ba`; a 4200 s video with transcript lines at 10 s, 1810 s and 3700 s.
+- **Steps:**
+  1. Run `listening_to_audio` of a `film_analysis` job
+  2. Read the requests and `storage/{job-id}/`
+- **Expected:**
+  - Step 1: three `audio/part-{NN}.m4a` of 1800 s, 1800 s and 600 s, mono AAC; for each part in time order: one upload to the Files API, waited on until `ACTIVE`, one `streamGenerateContent` call with the job's `speakersAndSounds` prompt and the reply schema `speakers`, `lines`, `sounds`, then the file's delete
+  - Messages: `This part of the film runs from 00:00 to 30:00.` with `[10000ms] …` and no `Speakers so far:`; part 2 `30:00 to 1:00:00` with `Speakers so far:`, `- Mai — young woman, soft voice`, `- Long`, `Use the same name for the same voice.` and `[1810000ms] …`; part 3 lists Mai, Long and Ba and `[3700000ms] …`; each audio is a `fileData` part after a text part `[audio {start}–{end}]`
+  - Step 2: each uploaded file deleted right after its call; `audio/` gone; `audio-notes.json` holds 3 speakers; `ai_used.listening_to_audio` = `G38`
+
+### TC-AIM-29: listening_to_audio — normalising the replies
+- **App:** API unit
+- **Precondition:** A 120 s video, one part; transcript lines at 1000, 5000 and 9000 ms. The faked Gemini answers
+  `speakers` `[{"name":" Mai ","voice":"soft"},{"name":"mai","voice":"loud"},{"name":"","voice":"x"}]`,
+  `lines` `[{"atMs":1000,"speaker":"Mai"},{"atMs":1000,"speaker":"Long"},{"atMs":4000,"speaker":"Mai"},{"atMs":5000,"speaker":"Ba"},{"atMs":9000,"speaker":" "}]`,
+  `sounds` `[{"atMs":20000,"kind":"ambient","description":"a dog barks"},{"atMs":21000,"kind":"action","description":"a door slams"},{"atMs":30000,"kind":"laugh","description":"x"},{"atMs":40000,"kind":"music","description":" "},{"atMs":500000,"kind":"silence","description":"silence"}]`.
+- **Steps:**
+  1. Run `listening_to_audio`; read `audio-notes.json`
+- **Expected:**
+  - Speakers `Mai` (`soft`) and `Ba` (blank voice) — the repeat `mai` and the blank name dropped, `Ba` added from a line
+  - Lines: 1000 ms → `Mai`, 5000 ms → `Ba`; 4000 ms (not a line start) and 9000 ms (blank speaker) dropped
+  - Sounds: 20000 `ambient` `a dog barks`; 119500 `silence` (clamped to duration − 500 ms); 21000 dropped (less than 3 s after the kept one), `laugh` and the blank description dropped
+
+### TC-AIM-30: listening_to_audio — failures
+- **App:** API unit
+- **Steps:** with `aiStepModels.audio` = `G38`:
+  1. Run it with a faked `ffmpeg` exiting with `Invalid data found when processing input`
+  2. Run it with the Files API reporting the upload `FAILED`
+  3. Run a 3-part video whose second part answers `HTTP 500` `{"error":{"message":"Internal error"}}`
+  4. Create a Film Clone in `whole_video`; set `aiStepModels.audio` = `CLI` before its job starts
+- **Expected:**
+  1. `failed` at `listening_to_audio`, `error_message` starts with `Audio preparation failed:`; no Gemini request
+  2. `failed`, `gemini could not take the audio: FAILED`
+  3. `failed`, `gemini failed: Internal error`; the third part is never uploaded; no `audio-notes.json`; `audio/` gone; both uploaded files deleted from Gemini
+  4. The clone is `failed` at `analyzing` with `Audio needs a Google AI model — open Settings`; no `claude` call
+
+### TC-AIM-31: compressing_video
+- **App:** API unit
+- **Precondition:** `AI_MEDIA_PART_SEC` = 1800, `FULL_VIDEO_MAX_SIDE_PX` = 480, `FULL_VIDEO_MAX_FPS` = 24.
+- **Steps:**
+  1. Run `compressing_video` on a 4200 s 1920×1080 60 fps video with stereo audio; `ffprobe` each part
+  2. Run it on a 60 s 320×180 15 fps video
+  3. Run it on a 60 s 1080×1920 30 fps video
+  4. Run it with a faked `ffmpeg` exiting with `Invalid data found when processing input`
+- **Expected:**
+  1. `compressed/part-01.mp4` … `part-03.mp4` of 1800 s, 1800 s and 600 s; each H.264 480×270 at 24 fps with one mono AAC stream
+  2. One part, 320×180 at 15 fps — never upscaled, frame rate never raised
+  3. One part, 270×480 at 24 fps
+  4. `failed` at `compressing_video`, `error_message` starts with `Video compression failed:`; no prompt pass starts
+
+### TC-AIM-32: What a full_video Gemini call sends
+- **App:** API unit
+- **Precondition:** Faked Gemini HTTP recording every request; `aiStepModels.filmAnalysis` = `G4`; a job with two
+  compressed parts.
+- **Steps:**
+  1. Run `writing_character_image_prompts` of the job; read the requests
+- **Expected:**
+  - Per part, in order: one upload to the Files API, one `streamGenerateContent` call, one delete; each user content ends with a text part `[video 00:00–30:00]` (then `30:00–…`) and a `fileData` part `video/mp4` with the uploaded `fileUri`; no `inlineData`
+  - `generationConfig.mediaResolution` = `MEDIA_RESOLUTION_LOW`; no `videoMetadata`; no `responseJsonSchema`
+  - No uploaded file is left on Gemini when the pass ends; `compressed/` stays
 
 ## Model catalog
 
@@ -263,38 +377,40 @@ Test cases for [business/8-ai-models.md](../business/8-ai-models.md). Acronym `A
   3. Click `Save`; `curl -s S`
   4. Navigate away and back
 - **Expected:**
-  - Step 1: `Key moments` = `Gemini 3.8 Flash`, `Film clone` = `GPT-6 Astra`, the other two `Same as all steps (Claude (CLI default))`; `Apply to all steps` enabled
-  - Step 2: all four rows read `Same as all steps (Claude (CLI default))`; `Apply to all steps` disabled; `Save` enabled; nothing saved yet
-  - Step 3: notice `Saved`; `aiStepModels` = `{"moments":null,"filmAnalysis":null,"filmScript":null,"filmClone":null}`; `aiModel` unchanged
+  - Step 1: `Key moments` = `Gemini 3.8 Flash`, `Film clone` = `GPT-6 Astra`, the other three `Same as all steps (Claude (CLI default))`; `Apply to all steps` enabled
+  - Step 2: all five rows read `Same as all steps (Claude (CLI default))`; `Apply to all steps` disabled; `Save` enabled; nothing saved yet
+  - Step 3: notice `Saved`; `aiStepModels` = `{"moments":null,"audio":null,"filmAnalysis":null,"filmScript":null,"filmClone":null}`; `aiModel` unchanged
   - Step 4: the rows keep `Same as all steps`
 
-### TC-AIM-23: Film Clone copies filmCloneInputMode, the other jobs inputMode
+### TC-AIM-23: Each job copies its own input mode
 - **App:** API
-- **Precondition:** `PATCH S` `{"inputMode":"subtitles","filmCloneInputMode":"whole_video"}`.
+- **Precondition:** `PATCH PV/google` `{"apiKey":"AIza-test-0000000000wxyz"}`; `PATCH S`
+  `{"aiStepModels":{"audio":G38,"filmAnalysis":G38},"inputMode":"subtitles","filmAnalysisInputMode":"full_video","filmCloneInputMode":"whole_video"}`.
 - **Steps:**
   1. `curl -i -X POST http://localhost:5070/jobs/youtube-to-markdown -H 'Content-Type: application/json' -d '{"url":"https://www.youtube.com/watch?v=dQw4w9WgXcQ","language":"en"}'`
   2. `curl -i -X POST http://localhost:5070/jobs/youtube-film-analysis -H 'Content-Type: application/json' -d '{"url":"https://www.youtube.com/watch?v=dQw4w9WgXcQ","language":"en"}'`
   3. `curl -i -X POST http://localhost:5070/film-clones/youtube -H 'Content-Type: application/json' -d '{"url":"https://www.youtube.com/watch?v=dQw4w9WgXcQ","language":"en"}'`; `curl -s http://localhost:5070/film-clones/{id}`
-  4. `PATCH S` `{"inputMode":"whole_video","filmCloneInputMode":"subtitles"}`; `curl -s http://localhost:5070/jobs/{id}` for the jobs of steps 1 and 2 and the stage 1 job of step 3
+  4. `PATCH S` `{"inputMode":"whole_video","filmAnalysisInputMode":"subtitles","filmCloneInputMode":"subtitles"}`; `curl -s http://localhost:5070/jobs/{id}` for the jobs of steps 1 and 2 and the stage 1 job of step 3
 - **Expected:**
   - Step 1: `HTTP 201`; `options.inputMode` = `subtitles`
-  - Step 2: `HTTP 201`; `options.inputMode` = `subtitles`
+  - Step 2: `HTTP 201`; `options.inputMode` = `full_video`; `options` has no `maxFrames`
   - Step 3: `HTTP 201`; `job.options.inputMode` = `whole_video`
-  - Step 4: the jobs keep `subtitles`, `subtitles` and `whole_video`
+  - Step 4: the jobs keep `subtitles`, `full_video` and `whole_video`
 
 ### TC-AIM-24: The Input line of New clone and its own Change link
 - **App:** Frontend + API
-- **Precondition:** `PATCH S` `{"aiModel":CLI,"aiStepModels":{},"inputMode":"subtitles","filmCloneInputMode":"whole_video"}`.
+- **Precondition:** `PATCH PV/google` `{"apiKey":"AIza-test-0000000000wxyz"}`; `PATCH S`
+  `{"aiModel":CLI,"aiStepModels":{"audio":G38},"inputMode":"subtitles","filmAnalysisInputMode":"subtitles","filmCloneInputMode":"whole_video"}`.
 - **Steps:**
   1. Navigate to http://localhost:5071/film-clone
   2. Navigate to http://localhost:5071/film-analysis
-  3. Navigate to http://localhost:5071/film-clone; click the `Change` right after `Input: Whole video`
+  3. Navigate to http://localhost:5071/film-clone; click the `Change` right after `Input: Frame image + audio`
   4. Select `Subtitles` from `Input mode`; click `Save`; navigate to http://localhost:5071/film-clone; `curl -s S`
   5. Click the `Change` of the AI models
 - **Expected:**
-  - Step 1: `New clone` reads `AI: Claude (CLI default) · Input: Whole video`, with a link `Change` for the AI models and its own link `Change` right after `Input: Whole video`
-  - Step 2: `New analysis` reads `AI: Claude (CLI default) · Input: Subtitles` with one link `Change`
-  - Step 3: URL becomes `/settings?tab=film-clone`; tab `Film Clone` open with `Input mode` = `Whole video`
+  - Step 1: `New clone` reads `AI: Key moments — Claude (CLI default) · Audio — Gemini 3.8 Flash · Film clone — Claude (CLI default) · Input: Frame image + audio`, with a link `Change` for the AI models and its own link `Change` right after `Input: Frame image + audio`
+  - Step 2: `New analysis` reads `AI: Claude (CLI default) · Input: Subtitles` with one link `Change` — `Audio` is not used in `subtitles`
+  - Step 3: URL becomes `/settings?tab=film-clone`; tab `Film Clone` open with `Input mode` = `Frame image + audio`
   - Step 4: notice `Saved`; `New clone` reads `AI: Claude (CLI default) · Input: Subtitles`; body has `"inputMode":"subtitles"`, `"filmCloneInputMode":"subtitles"`
   - Step 5: URL becomes `/settings?tab=ai-models`
 
@@ -362,7 +478,7 @@ Test cases for [business/8-ai-models.md](../business/8-ai-models.md). Acronym `A
 
 ### TC-AIM-22: The AI line on detail screens
 - **App:** Frontend
-- **Precondition:** `PATCH S` `{"aiModel":CLI,"aiStepModels":{},"inputMode":"subtitles"}`. A Film Studio
+- **Precondition:** `PATCH S` `{"aiModel":CLI,"aiStepModels":{},"filmAnalysisInputMode":"subtitles"}`. A Film Studio
   project P1 as in TC-AIM-04.
 - **Steps:**
   1. Run a Film Analysis on F1 with `Max frames` = `10` until `done`; open `/film-analysis/{id}`

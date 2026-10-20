@@ -1,17 +1,18 @@
 import Link from "next/link";
 import { AI_MODEL_LIST_SEPARATOR, AI_MODELS_SETTINGS_TAB, type SettingsTab } from "@/features/settings/constants";
-import type { AiModelStatus, InputMode } from "@/features/settings/types";
+import type { AiModelStatus } from "@/features/settings/types";
 import {
+  buildGoogleAiModelHint,
   buildMissingAiKeyHint,
   buildSettingsPath,
   describeAiModelLine,
   describeInputModeLine,
+  listGroupsNeedingGoogleAi,
   listMissingAiProviderNames,
 } from "@/features/settings/utils";
 
 interface AiModelLineProps {
   status: AiModelStatus;
-  inputMode?: InputMode;
   inputModeSettingsTab?: SettingsTab;
 }
 
@@ -19,9 +20,11 @@ interface SettingsChangeLinkProps {
   settingsTab: SettingsTab;
 }
 
-export function AiModelLine({ status, inputMode, inputModeSettingsTab }: AiModelLineProps) {
+export function AiModelLine({ status, inputModeSettingsTab }: AiModelLineProps) {
   const aiModelPart = describeAiModelLine(status);
-  const inputModePart = inputMode ? `${AI_MODEL_LIST_SEPARATOR}${describeInputModeLine(inputMode)}` : "";
+  const inputModePart = status.inputModeLabel
+    ? `${AI_MODEL_LIST_SEPARATOR}${describeInputModeLine(status.inputModeLabel)}`
+    : "";
 
   return (
     <div className="flex flex-col gap-1">
@@ -38,6 +41,11 @@ export function AiModelLine({ status, inputMode, inputModeSettingsTab }: AiModel
       {listMissingAiProviderNames(status).map((providerName) => (
         <p key={providerName} className="text-xs text-muted">
           {buildMissingAiKeyHint(providerName)}
+        </p>
+      ))}
+      {listGroupsNeedingGoogleAi(status).map((group) => (
+        <p key={group} className="text-xs text-muted">
+          {buildGoogleAiModelHint(group)}
         </p>
       ))}
     </div>

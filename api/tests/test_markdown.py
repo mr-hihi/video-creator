@@ -3,6 +3,8 @@ import pytest
 from app.modules.jobs.video_to_markdown.markdown import (
     CapturedMoment,
     MarkdownSource,
+    Speaker,
+    SpeakerVoices,
     build_markdown,
     build_markdown_with_moment_links,
 )
@@ -127,3 +129,99 @@ def test_build_markdown_with_moment_links_shows_the_source_label(linked_markdown
 
 def test_build_markdown_with_moment_links_keeps_alt_text_plain(linked_markdown_lines):
     assert LINKED_ALT_TEXT_LINE in linked_markdown_lines
+
+
+SPOKEN_TRANSCRIPT = Transcript(
+    language="vi",
+    segments=[
+        TranscriptSegment(start_ms=0, end_ms=1500, text=" Chào anh."),
+        TranscriptSegment(start_ms=2000, end_ms=3500, text=" Chào em."),
+        TranscriptSegment(start_ms=4000, end_ms=5500, text=" Đi thôi."),
+        TranscriptSegment(start_ms=5800, end_ms=6000, text="  "),
+    ],
+)
+SPEAKER_VOICES = SpeakerVoices(
+    speakers=[Speaker("Mai", "young woman, soft voice"), Speaker("Long", "")],
+    speaker_names_by_start_ms={0: "Mai", 2000: "Long"},
+)
+EXPECTED_SPOKEN_MARKDOWN = """# Gặp gỡ
+
+> Source: phim.mp4 · Duration: 00:10 · Language: vi
+
+Hai người gặp nhau.
+
+Speakers:
+- **Mai** — young woman, soft voice
+- **Long**
+
+## 00:00 — Gặp gỡ
+
+![00:00 — Gặp gỡ](images/moment-01-00m00s.jpg)
+
+**Mai:** Chào anh.
+
+**Long:** Chào em.
+
+Đi thôi.
+"""
+
+
+def build_spoken_markdown(voices: SpeakerVoices) -> str:
+    return build_markdown(
+        MarkdownSource(
+            title="Gặp gỡ",
+            summary="Hai người gặp nhau.",
+            source_label="phim.mp4",
+            duration_ms=10_000,
+            transcript=SPOKEN_TRANSCRIPT,
+            captured_moments=[
+                CapturedMoment(KeyMoment(at_ms=0, title="Gặp gỡ"), "images/moment-01-00m00s.jpg")
+            ],
+            voices=voices,
+        )
+    )
+
+
+@pytest.fixture
+def spoken_markdown():
+    return build_spoken_markdown(SPEAKER_VOICES)
+
+
+@pytest.fixture
+def unspoken_markdown():
+    return build_spoken_markdown(SpeakerVoices())
+
+
+@pytest.fixture
+def spoken_leading_markdown():
+    return build_markdown(
+        MarkdownSource(
+            title="Gặp gỡ",
+            summary="",
+            source_label="phim.mp4",
+            duration_ms=10_000,
+            transcript=SPOKEN_TRANSCRIPT,
+            captured_moments=[
+                CapturedMoment(KeyMoment(at_ms=4000, title="Đi"), "images/moment-01-00m04s.jpg")
+            ],
+            voices=SPEAKER_VOICES,
+        )
+    )
+
+
+def test_markdown_with_speakers_lists_them_and_gives_each_line_its_speaker(spoken_markdown):
+    assert spoken_markdown == EXPECTED_SPOKEN_MARKDOWN
+
+
+def test_markdown_without_speakers_joins_each_moment_into_one_paragraph(unspoken_markdown):
+    assert "Speakers:" not in unspoken_markdown
+    assert unspoken_markdown.endswith("Chào anh. Chào em. Đi thôi.\n")
+
+
+def test_markdown_with_speakers_splits_the_lines_before_the_first_moment(
+    spoken_leading_markdown,
+):
+    assert (
+        "- **Long**\n\n**Mai:** Chào anh.\n\n**Long:** Chào em.\n\n## 00:04 — Đi"
+        in spoken_leading_markdown
+    )

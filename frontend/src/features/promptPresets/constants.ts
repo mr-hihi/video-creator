@@ -8,6 +8,7 @@ export interface PromptSection {
 
 export const PROMPT_SECTIONS: readonly PromptSection[] = [
   { key: "videoToMarkdown", title: "Video → Markdown", usedBy: "Video to Markdown, Film Analysis, Film Clone" },
+  { key: "speakersAndSounds", title: "Speakers & sounds", usedBy: "Film Analysis, Film Clone" },
   { key: "characterImage", title: "Character image prompts", usedBy: "Film Analysis" },
   { key: "characterVoice", title: "Character voice prompts", usedBy: "Film Analysis" },
   { key: "scene", title: "Scene prompts", usedBy: "Film Analysis" },

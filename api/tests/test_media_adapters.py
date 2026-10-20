@@ -6,9 +6,11 @@ import pytest
 
 from app.common.process import CommandError, CommandRunner
 from app.modules.jobs.video_to_markdown.ffmpeg_media import (
+    AudioSplit,
     FfmpegConfig,
     FfmpegMediaProcessor,
     FrameSampling,
+    VideoCompression,
 )
 from app.modules.jobs.video_to_markdown.transcript import Transcript, TranscriptSegment
 from app.modules.jobs.video_to_markdown.whisper_transcriber import (
@@ -73,6 +75,28 @@ def sampling_command(runner, media):
             output_pattern=Path("/jobs/j1/samples/sample-%05d.jpg"),
             frame_count=12,
             max_width_px=512,
+        )
+    )
+    return runner.run.call_args.args[0]
+
+
+@pytest.fixture
+def audio_split_command(runner, media):
+    media.split_audio(
+        AudioSplit(video_path=VIDEO_PATH, output_dir=Path("/jobs/j1/audio"), part_sec=1800)
+    )
+    return runner.run.call_args.args[0]
+
+
+@pytest.fixture
+def compression_command(runner, media):
+    media.compress_video(
+        VideoCompression(
+            video_path=VIDEO_PATH,
+            output_dir=Path("/jobs/j1/compressed"),
+            part_sec=1800,
+            max_side_px=480,
+            max_fps=24,
         )
     )
     return runner.run.call_args.args[0]
@@ -157,3 +181,77 @@ def test_transcribe_reads_whisper_json_output(transcript):
 def test_transcribe_raises_when_model_is_missing(missing_model_error, runner):
     assert "Whisper model not found" in str(missing_model_error)
     runner.run.assert_not_called()
+
+
+def test_split_audio_writes_mono_aac_parts_in_one_pass(audio_split_command):
+    assert audio_split_command.args == [
+        "ffmpeg",
+        "-y",
+        "-loglevel",
+        "error",
+        "-i",
+        "/videos/clip.mp4",
+        "-vn",
+        "-ac",
+        "1",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "64k",
+        "-f",
+        "segment",
+        "-segment_time",
+        "1800",
+        "-reset_timestamps",
+        "1",
+        "-segment_start_number",
+        "1",
+        "/jobs/j1/audio/part-%02d.m4a",
+    ]
+    assert audio_split_command.timeout_sec == 60
+
+
+def test_compress_video_caps_the_long_side_and_frame_rate_and_cuts_parts(compression_command):
+    assert compression_command.args == [
+        "ffmpeg",
+        "-y",
+        "-loglevel",
+        "error",
+        "-i",
+        "/videos/clip.mp4",
+        "-map",
+        "0:v:0",
+        "-map",
+        "0:a:0?",
+        "-vf",
+        "scale='if(gte(iw,ih),trunc(min(480,iw)/2)*2,-2)':"
+        "'if(gte(iw,ih),-2,trunc(min(480,ih)/2)*2)'",
+        "-fpsmax",
+        "24",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "28",
+        "-pix_fmt",
+        "yuv420p",
+        "-force_key_frames",
+        "expr:gte(t,n_forced*1800)",
+        "-c:a",
+        "aac",
+        "-ac",
+        "1",
+        "-b:a",
+        "64k",
+        "-f",
+        "segment",
+        "-segment_time",
+        "1800",
+        "-reset_timestamps",
+        "1",
+        "-segment_start_number",
+        "1",
+        "/jobs/j1/compressed/part-%02d.mp4",
+    ]
+    assert compression_command.timeout_sec == 60

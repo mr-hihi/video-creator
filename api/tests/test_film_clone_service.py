@@ -59,6 +59,7 @@ PROMPT_OPTIONS = {
     "preset": {"id": "p-1", "name": "Default", "version": 3},
     "prompts": {
         "videoToMarkdown": "VTM",
+        "speakersAndSounds": "Hear",
         "cloneAssets": "Assets",
         "cloneShots": "Shots",
         "cloneLocalization": "Localize",
@@ -484,6 +485,7 @@ def test_create_splits_prompts_between_job_and_clone(created):
     assert created.job.options["inputMode"] == "whole_video"
     assert created.job.options["prompts"] == {
         "videoToMarkdown": "VTM",
+        "speakersAndSounds": "Hear",
         "cloneAssets": "Assets",
         "cloneShots": "Shots",
     }

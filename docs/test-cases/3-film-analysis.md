@@ -10,6 +10,9 @@ Test cases for [business/3-film-analysis.md](../business/3-film-analysis.md). Ac
 - Preset `Three scenes`: `POST /prompt-presets` `{"name":"Three scenes"}`, then `PUT` with the default
   prompts except `scene` = the default text followed by `Write exactly 3 scene prompts.` — at v2.
 - Claude's answers vary between runs; cases check structure, not wording.
+- `Frame image + audio` and `Full video` cases run against the mock AI of `tools/mock-ai`, which must answer the
+  Gemini Files API and the `speakersAndSounds` schema, with the fake key `AIza-test-0000000000wxyz` saved on the
+  `google` provider. `G38` = `{"provider":"google","model":"gemini-3.8-flash"}`.
 
 ---
 
@@ -31,7 +34,7 @@ Test cases for [business/3-film-analysis.md](../business/3-film-analysis.md). Ac
   - `Result` has the tabs `Character image prompts`, `Character voice prompts`, `Scene prompts`, `Video notes`; `Character image prompts` is open and has ≥ 1 `##` heading
   - Step 7: the button reads `Copied` for 2 s; the clipboard equals `outputs.characterImagePrompts` of `GET /jobs/{id}`
   - `Video notes` shows frames with `##` headings; every `Scene change` heading has an image
-  - `GET /jobs/{id}` → `type` = `film_analysis`, `options.maxFrames` = 20, `options.prompts` has the four keys, `markdown` = `null`, all four `outputs` set
+  - `GET /jobs/{id}` → `type` = `film_analysis`, `options.maxFrames` = 20, `options.prompts` has the five keys of 2.5, `markdown` = `null`, all four `outputs` set
   - `api/storage-test/{id}/output/` holds `images/` only — no `.md`; no `result.zip`
   - `curl -i http://localhost:5070/jobs/{id}/download` → `HTTP 409`, `detail` = `Job {id} has no zip download`
 
@@ -81,6 +84,32 @@ Test cases for [business/3-film-analysis.md](../business/3-film-analysis.md). Ac
   - Step 3: `Analyze` is disabled at `5` and `1001`, enabled at `1000`
   - Step 4: URL becomes `/settings?tab=prompt-override&id={default preset id}`
 
+### TC-FA-25: Full video, upload end to end
+- **App:** Frontend
+- **Precondition:** Mock AI as in § Test environment; `PATCH /settings`
+  `{"aiModel":{"provider":"claude_cli","model":"default"},"aiStepModels":{"filmAnalysis":G38},"filmAnalysisInputMode":"full_video"}`.
+- **Steps:**
+  1. Navigate to http://localhost:5071/film-analysis; drop F1 on the `Film` field; select `Vietnamese`
+  2. *(captcha on)* Wait for the captcha; click `Analyze`
+  3. Wait until the status badge shows `done`
+  4. List `api/storage-test/{id}/`; read the mock's `calls.jsonl`
+- **Expected:**
+  - Step 1: no `Max frames` field; the line reads `AI: Gemini 3.8 Flash · Input: Full video`; `Analyze` enabled
+  - Step 3: the step list shows `Compressing video`, `Writing character image prompts`, `Writing character voice prompts`, `Writing scene prompts` in that order — no transcription, moments or frames; summary `Input` = `Full video`, `Frames` = `—`, `AI` lists the three passes, each `Gemini 3.8 Flash`
+  - `Result` has the tabs `Character image prompts`, `Character voice prompts`, `Scene prompts` — no `Video notes` tab; each has content
+  - `GET /jobs/{id}` → `options.inputMode` = `full_video`, no `maxFrames`, no `frameCounts`; `outputs.videoNotes` = `null`
+  - Step 4: `compressed/part-01.mp4` exists; no `output/images/`; three Gemini calls, each with one uploaded video and the message `The film is attached as video.` and `Spoken language: Vietnamese`; no `claude` call
+
+### TC-FA-26: Full video, YouTube without captions
+- **App:** API
+- **Precondition:** As TC-FA-25; network up. V2 has no usable `ko` caption — only machine-translated ones (1.4).
+- **Steps:**
+  1. `curl -s -X POST http://localhost:5070/jobs/youtube-film-analysis -H 'Content-Type: application/json' -d '{"url":"https://www.youtube.com/watch?v=dQw4w9WgXcQ","language":"ko","maxFrames":5}'`
+  2. Wait until the job is `done`; `curl -s http://localhost:5070/jobs/{id}`; `ffprobe api/storage-test/{id}/source.mp4`
+- **Expected:**
+  - Step 1: `HTTP 201` — `maxFrames` is not checked in `full_video`
+  - Step 2: steps `downloading_video`, `compressing_video` and the three passes; no `fetching_transcript`, so the missing `ko` captions do not fail it; `options` has no `maxFrames` and no `captionKind`; `source.mp4` has a video and an audio stream
+
 ## Frames
 
 ### TC-FA-05: Dialogue frames and scene cuts are merged
@@ -113,6 +142,32 @@ Test cases for [business/3-film-analysis.md](../business/3-film-analysis.md). Ac
   1. The job continues; `frameCounts.scene` = 0; frames = the dialogue moments only
   2. `failed` at `detecting_scenes`, `error_message` starts with `Scene detection failed:`; `capturing_frames` never starts
 
+### TC-FA-27: Sound frames join dialogue frames and scene cuts
+- **App:** API unit
+- **Precondition:** `whole_video`; duration 600000 ms; dialogue moments at 0, 10000, 60000 ms; sounds of
+  `listening_to_audio` at 5000 (`ambient` `a dog barks`), 11000 (`action` `a door slams`), 20000 (`silence`),
+  40000 (`music` `drums start`); cuts at 15000, 21000, 30000, 45000, 70000 ms.
+- **Steps:**
+  1. Merge with `maxFrames` = 9
+  2. Merge with `maxFrames` = 5
+- **Expected:**
+  - Dropped in both: sound 11000 (within 3 s of the dialogue frame 10000)
+  1. Sound frames 5000, 20000, 40000; cut 21000 dropped (within 3 s of the sound frame 20000); 3 slots over 4 cuts (15000, 30000, 45000, 70000) → indices 0, 1, 2: 15000, 30000, 45000; `frameCounts` = `{ "dialogue": 3, "sound": 3, "scene": 3 }`
+  2. 2 slots over 3 sounds → indices 0, 1: sound frames 5000, 20000; no slot left for a cut; `frameCounts` = `{ "dialogue": 3, "sound": 2, "scene": 0 }`
+  - Sound frames are titled `Ambient: a dog barks`, `Silence: …`, `Music: drums start`
+
+### TC-FA-28: Video notes name the speakers
+- **App:** API unit
+- **Precondition:** `whole_video`; transcript segments at 0 ms `Chào anh.`, 2000 ms `Chào em.`, 4000 ms `Đi thôi.`;
+  `audio-notes.json` with speakers `Mai` (`young woman, soft voice`) and `Long` (blank voice), lines 0 → `Mai`,
+  2000 → `Long`, none for 4000.
+- **Steps:**
+  1. Run `writing_markdown`
+- **Expected:**
+  - Right after the summary: `Speakers:`, `- **Mai** — young woman, soft voice`, `- **Long**`
+  - Under the first moment, three paragraphs: `**Mai:** Chào anh.`, `**Long:** Chào em.`, `Đi thôi.`
+  - A `subtitles` job with the same segments has no `Speakers:` and one paragraph per moment, as 1.6
+
 ## Prompt passes
 
 ### TC-FA-08: Inputs of each prompt pass
@@ -134,6 +189,19 @@ Test cases for [business/3-film-analysis.md](../business/3-film-analysis.md). Ac
   1. Run the three prompt steps
 - **Expected:**
   - Every call attaches `images/moment-0.jpg` and `images/moment-2.jpg` only
+
+### TC-FA-29: Full video passes over several parts
+- **App:** API unit
+- **Precondition:** A `full_video` job with `compressed/part-01.mp4`, `part-02.mp4`, `part-03.mp4`, `language` =
+  `auto`; faked Gemini answering the image pass `## A`, `## A\n## B`, `## A\n## B\n## C` part by part, the
+  voice pass `V1`, `V2`, `V3`, the scene pass ` S1 `, `S2`, `S3`.
+- **Steps:**
+  1. Run the three prompt steps; read the requests
+  2. Run them again with the third image call answering `HTTP 500` `{"error":{"message":"Internal error"}}`
+- **Expected:**
+  - Step 1: nine calls; no `Spoken language:` line; each carries `(part {k} of 3)`; image calls 2 and 3 carry `Your answer for the earlier parts:` with `## A` / `## A\n## B`; voice and scene calls carry `Characters:` with `## A\n## B\n## C`; voice calls 2 and 3 carry the earlier voice answer, scene calls do not
+  - Stored: `character_image_prompts` = `## A\n## B\n## C`, `character_voice_prompts` = `V3`, `scene_prompts` = `S1\n\nS2\n\nS3`
+  - Step 2: `failed` at `writing_character_image_prompts`, `gemini failed: Internal error`; no `character_image_prompts` row; the voice pass never runs
 
 ### TC-FA-09: A failing pass keeps earlier results
 - **App:** API unit
@@ -162,7 +230,7 @@ Test cases for [business/3-film-analysis.md](../business/3-film-analysis.md). Ac
   2. `PUT /prompt-presets/{Three scenes id}` changing `scene` to `Changed`
   3. `curl -s http://localhost:5070/jobs/{id}`
 - **Expected:**
-  - Step 3: `options.preset` = `{ "id": "{Three scenes id}", "name": "Three scenes", "version": 2 }`; `options.prompts` has the four keys and `scene` ends with `Write exactly 3 scene prompts.`
+  - Step 3: `options.preset` = `{ "id": "{Three scenes id}", "name": "Three scenes", "version": 2 }`; `options.prompts` has the five keys of 2.5 and `scene` ends with `Write exactly 3 scene prompts.`
 
 ## Rerun
 
@@ -198,6 +266,18 @@ Test cases for [business/3-film-analysis.md](../business/3-film-analysis.md). Ac
   4. `HTTP 400`, `detail` = `Prompt preset 00000000-0000-0000-0000-000000000000 not found`
   5. `HTTP 403`, `detail` = `Captcha verification failed`
   - No job created
+
+### TC-FA-30: Rerun of a full video analysis
+- **App:** API
+- **Precondition:** TC-FA-25 is `done` (A2); a `full_video` job failed at `compressing_video` (A3).
+- **Steps:**
+  1. `PATCH /settings` `{"aiStepModels":{"filmAnalysis":{"provider":"claude_cli","model":"default"}}}`; `curl -i -X POST http://localhost:5070/jobs/{A2}/film-analysis-rerun -H 'Content-Type: application/json' -d '{}'`
+  2. `PATCH /settings` `{"aiStepModels":{"filmAnalysis":G38}}`; same request for A3
+  3. Same request for A2; wait until the new job is `done`; list `api/storage-test/{new id}/`
+- **Expected:**
+  1. `HTTP 409`, `detail` = `Film analysis needs a Google AI model — open Settings`
+  2. `HTTP 409`, `detail` = `Job {A3 id} has no compressed video to reuse`
+  3. `HTTP 201`; `options.inputMode` = `full_video`; steps: the three passes only; `compressed/` copied with the same parts; each pass uploads them again; the detail summary `Input` = `Full video`
 
 ### TC-FA-14: A rerun survives deleting its source
 - **App:** Frontend + API

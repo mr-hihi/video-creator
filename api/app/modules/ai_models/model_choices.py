@@ -13,6 +13,13 @@ AI_NAMES_BY_PROVIDER: dict[ProviderId, str] = {
     ProviderId.OPENAI: "openai",
 }
 DEFAULT_AI_MODEL = AiModelChoice(ProviderId.CLAUDE_CLI, CLAUDE_CLI_DEFAULT_MODEL)
+GROUP_LABELS: dict[AiStepGroup, str] = {
+    AiStepGroup.MOMENTS: "Key moments",
+    AiStepGroup.AUDIO: "Audio",
+    AiStepGroup.FILM_ANALYSIS: "Film analysis",
+    AiStepGroup.FILM_SCRIPT: "Film script",
+    AiStepGroup.FILM_CLONE: "Film clone",
+}
 
 
 def to_model_choice(value: Any) -> AiModelChoice | None:
@@ -66,3 +73,7 @@ def to_ai_name(provider: ProviderId) -> str:
 
 def to_provider_name(provider: ProviderId) -> str:
     return PROVIDER_SPECS_BY_ID[provider].name
+
+
+def to_group_label(group: AiStepGroup) -> str:
+    return GROUP_LABELS[group]

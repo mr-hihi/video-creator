@@ -5,7 +5,7 @@ import type {
   AiModelStatus,
   AiModelsSaveResult,
   AiModelsUpdate,
-  AiStepGroup,
+  AiRun,
   AppSettings,
   MediaProviderStatus,
 } from "./types";
@@ -25,11 +25,11 @@ export function useAppSettingsQuery() {
   });
 }
 
-export function useAiModelStatus(groups: readonly AiStepGroup[]): AiModelStatus | undefined {
+export function useAiModelStatus(run: AiRun): AiModelStatus | undefined {
   const { data: settings } = useAppSettingsQuery();
   const { data: analysisProviders } = useAnalysisProvidersQuery();
   if (!settings || !analysisProviders) return undefined;
-  return buildAiModelStatus(settings, analysisProviders, groups);
+  return buildAiModelStatus(settings, analysisProviders, run);
 }
 
 export function useMediaProviderStatus(): MediaProviderStatus | undefined {

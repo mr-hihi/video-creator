@@ -226,6 +226,14 @@ def test_get_prompt_defaults_returns_defaults_and_app_added_parts(defaults_respo
     )
 
 
+def test_prompt_defaults_tell_voices_apart_and_mark_sounds(defaults_response):
+    prompts = defaults_response.json()["prompts"]
+    assert "tell its voices apart" in prompts["speakersAndSounds"]
+    assert "Mark the sounds that are not speech" in prompts["speakersAndSounds"]
+    assert "one entry per distinct voice" in prompts["characterVoice"]
+    assert "no speaker labels" not in prompts["characterVoice"]
+
+
 def test_save_prompt_preset_forwards_a_draft(save_response, preset_service):
     assert save_response.status_code == 200
     preset_service.save_preset.assert_called_once_with(

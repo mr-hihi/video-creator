@@ -9,6 +9,9 @@ COPY_CHUNK_BYTES = 1024 * 1024
 FALLBACK_STEM = "video"
 IMAGES_DIR_NAME = "images"
 SAMPLES_DIR_NAME = "samples"
+AUDIO_DIR_NAME = "audio"
+COMPRESSED_DIR_NAME = "compressed"
+AUDIO_NOTES_FILENAME = "audio-notes.json"
 
 
 class UploadTooLargeError(Exception):
@@ -42,6 +45,15 @@ class JobStorage:
     def samples_dir(self, job_id: str) -> Path:
         return self.job_dir(job_id) / SAMPLES_DIR_NAME
 
+    def audio_dir(self, job_id: str) -> Path:
+        return self.job_dir(job_id) / AUDIO_DIR_NAME
+
+    def audio_notes_path(self, job_id: str) -> Path:
+        return self.job_dir(job_id) / AUDIO_NOTES_FILENAME
+
+    def compressed_dir(self, job_id: str) -> Path:
+        return self.job_dir(job_id) / COMPRESSED_DIR_NAME
+
     def markdown_path(self, job_id: str, source_filename: str) -> Path:
         return self.output_dir(job_id) / f"{to_safe_stem(source_filename)}.md"
 
@@ -69,8 +81,17 @@ class JobStorage:
     def copy_images(self, source_job_id: str, target_job_id: str) -> None:
         shutil.copytree(self.images_dir(source_job_id), self.images_dir(target_job_id))
 
+    def copy_compressed(self, source_job_id: str, target_job_id: str) -> None:
+        shutil.copytree(self.compressed_dir(source_job_id), self.compressed_dir(target_job_id))
+
     def delete_samples(self, job_id: str) -> None:
         shutil.rmtree(self.samples_dir(job_id), ignore_errors=True)
+
+    def delete_audio_parts(self, job_id: str) -> None:
+        shutil.rmtree(self.audio_dir(job_id), ignore_errors=True)
+
+    def delete_compressed(self, job_id: str) -> None:
+        shutil.rmtree(self.compressed_dir(job_id), ignore_errors=True)
 
     def delete_job_files(self, job_id: str) -> None:
         shutil.rmtree(self.job_dir(job_id), ignore_errors=True)

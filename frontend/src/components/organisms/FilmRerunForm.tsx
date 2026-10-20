@@ -8,20 +8,21 @@ import { AiModelLine } from "@/components/molecules/AiModelLine";
 import { Captcha, type CaptchaHandle } from "@/components/molecules/Captcha";
 import { useCreateFilmAnalysisRerunJobMutation } from "@/features/jobs/queries";
 import { buildFilmAnalysisDetailPath } from "@/features/jobs/utils";
-import { AI_STEP_GROUPS_BY_RUN } from "@/features/settings/constants";
 import { useAiModelStatus } from "@/features/settings/queries";
+import type { FilmAnalysisInputMode } from "@/features/settings/types";
 import { isAiModelBlocked } from "@/features/settings/utils";
 import { IS_CAPTCHA_ENABLED } from "@/lib/captcha/captchaWidget";
 import { PromptPresetSelect } from "./PromptPresetSelect";
 
 interface FilmRerunFormProps {
   sourceJobId: string;
+  sourceInputMode: FilmAnalysisInputMode | undefined;
 }
 
-export function FilmRerunForm({ sourceJobId }: FilmRerunFormProps) {
+export function FilmRerunForm({ sourceJobId, sourceInputMode }: FilmRerunFormProps) {
   const router = useRouter();
   const rerunMutation = useCreateFilmAnalysisRerunJobMutation();
-  const aiModelStatus = useAiModelStatus(AI_STEP_GROUPS_BY_RUN.filmAnalysisRerun);
+  const aiModelStatus = useAiModelStatus({ kind: "filmAnalysisRerun", sourceInputMode });
   const captchaRef = useRef<CaptchaHandle>(null);
   const [presetId, setPresetId] = useState<string>();
   const [captchaToken, setCaptchaToken] = useState<string>();

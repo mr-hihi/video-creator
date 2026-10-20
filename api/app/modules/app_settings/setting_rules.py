@@ -2,7 +2,7 @@ from collections.abc import Callable, Iterable, Mapping
 from enum import StrEnum
 from typing import Any
 
-from app.modules.ai_models.ai_calls import AiStepGroup, InputMode
+from app.modules.ai_models.ai_calls import MOMENT_INPUT_MODES, AiStepGroup, InputMode
 from app.modules.ai_models.model_choices import (
     DEFAULT_AI_MODEL,
     to_model_choice,
@@ -31,6 +31,7 @@ SCRIPT_LANGUAGE_KEY = "scriptLanguage"
 AI_MODEL_KEY = "aiModel"
 AI_STEP_MODELS_KEY = "aiStepModels"
 INPUT_MODE_KEY = "inputMode"
+FILM_ANALYSIS_INPUT_MODE_KEY = "filmAnalysisInputMode"
 FILM_CLONE_INPUT_MODE_KEY = "filmCloneInputMode"
 FILM_CLONE_IMAGE_PROVIDER_KEY = "filmCloneImageProvider"
 FILM_STUDIO_IMAGE_PROVIDER_KEY = "filmStudioImageProvider"
@@ -40,6 +41,7 @@ DEFAULT_VALUES_BY_KEY: dict[str, Any] = {
     AI_MODEL_KEY: to_model_value(DEFAULT_AI_MODEL),
     AI_STEP_MODELS_KEY: {group.value: None for group in AiStepGroup},
     INPUT_MODE_KEY: InputMode.SUBTITLES.value,
+    FILM_ANALYSIS_INPUT_MODE_KEY: InputMode.SUBTITLES.value,
     FILM_CLONE_INPUT_MODE_KEY: InputMode.SUBTITLES.value,
     FILM_CLONE_IMAGE_PROVIDER_KEY: None,
     FILM_STUDIO_IMAGE_PROVIDER_KEY: None,
@@ -52,7 +54,12 @@ IMAGE_PROVIDER_KEY_BY_FEATURE: dict[MediaFeature, str] = {
     MediaFeature.FILM_CLONE: FILM_CLONE_IMAGE_PROVIDER_KEY,
     MediaFeature.FILM_STUDIO: FILM_STUDIO_IMAGE_PROVIDER_KEY,
 }
-AI_MODEL_SETTING_KEYS = (AI_MODEL_KEY, AI_STEP_MODELS_KEY, INPUT_MODE_KEY)
+AI_MODEL_SETTING_KEYS = (
+    AI_MODEL_KEY,
+    AI_STEP_MODELS_KEY,
+    INPUT_MODE_KEY,
+    FILM_ANALYSIS_INPUT_MODE_KEY,
+)
 
 
 def to_stored_member(value: Any, members: Iterable[StrEnum]) -> str | None:
@@ -83,8 +90,9 @@ STORED_VALUE_RULES_BY_KEY: dict[str, Callable[[Any], Any]] = {
     SCRIPT_LANGUAGE_KEY: lambda value: to_stored_member(value, ScriptLanguage),
     AI_MODEL_KEY: to_stored_ai_model,
     AI_STEP_MODELS_KEY: to_stored_ai_step_models,
-    INPUT_MODE_KEY: lambda value: to_stored_member(value, InputMode),
-    FILM_CLONE_INPUT_MODE_KEY: lambda value: to_stored_member(value, InputMode),
+    INPUT_MODE_KEY: lambda value: to_stored_member(value, MOMENT_INPUT_MODES),
+    FILM_ANALYSIS_INPUT_MODE_KEY: lambda value: to_stored_member(value, InputMode),
+    FILM_CLONE_INPUT_MODE_KEY: lambda value: to_stored_member(value, MOMENT_INPUT_MODES),
     FILM_CLONE_IMAGE_PROVIDER_KEY: to_stored_image_provider,
     FILM_STUDIO_IMAGE_PROVIDER_KEY: to_stored_image_provider,
     FILM_STUDIO_CLIP_PROVIDER_KEY: to_stored_clip_provider,

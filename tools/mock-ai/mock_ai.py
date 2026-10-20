@@ -10,20 +10,28 @@ import socket
 import ssl
 import stat
 import subprocess
+import threading
 import time
 import uuid
+from dataclasses import dataclass, replace
+from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 import certifi
 from ai_answers import build_scenario_answer
 from mock_state import (
     CALLS_FILE_NAME,
+    GEMINI_AI,
+    GEMINI_FILES_AI,
     SCENARIO_FILE_NAME,
     SCENARIO_USES_FILE_NAME,
+    UPLOAD_RULE_KEY,
     AskView,
     SentImage,
+    SentMedia,
     decode_base64_image,
     describe_ask,
     find_state_dir,
@@ -31,6 +39,7 @@ from mock_state import (
     record_call,
     split_into_chunks,
     take_scenario_rule,
+    take_upload_rule,
 )
 
 LOOPBACK_HOST = "127.0.0.1"
@@ -39,8 +48,27 @@ GEMINI_HOST = "generativelanguage.googleapis.com"
 OPENAI_HOST = "api.openai.com"
 MOCKED_HOSTS = frozenset({GEMINI_HOST, OPENAI_HOST})
 GEMINI_STREAM_PATH = re.compile(r"^/v1beta/models/([^/:?]+):streamGenerateContent(\?.*)?$")
+GEMINI_UPLOAD_PATH = "/upload/v1beta/files"
+GEMINI_FILE_PATH = re.compile(r"/v1beta/files/([^/?]+)")
 OPENAI_RESPONSES_PATH = "/v1/responses"
 GEMINI_KEY_HEADER = "x-goog-api-key"
+UPLOAD_PROTOCOL_HEADER = "X-Goog-Upload-Protocol"
+UPLOAD_COMMAND_HEADER = "X-Goog-Upload-Command"
+UPLOAD_OFFSET_HEADER = "X-Goog-Upload-Offset"
+UPLOAD_LENGTH_HEADER = "X-Goog-Upload-Header-Content-Length"
+UPLOAD_TYPE_HEADER = "X-Goog-Upload-Header-Content-Type"
+UPLOAD_URL_HEADER = "x-goog-upload-url"
+UPLOAD_STATUS_HEADER = "x-goog-upload-status"
+UPLOAD_ID_PARAM = "upload_id"
+UPLOAD_START_COMMAND = "start"
+UPLOAD_FINALIZE_COMMAND = "finalize"
+UPLOAD_ACTIVE_STATUS = "active"
+UPLOAD_ERROR_RULE = "error"
+CHUNKED_ENCODING = "chunked"
+FILE_ID_CHARS = 16
+FILE_STATE_PROCESSING = "PROCESSING"
+FILE_STATE_ACTIVE = "ACTIVE"
+FILE_STATE_FAILED = "FAILED"
 BEARER_PREFIX = "Bearer "
 DATA_URL_PREFIX = "data:image/jpeg;base64,"
 TUNNEL_BUFFER_BYTES = 65536
@@ -55,6 +83,115 @@ ENV_FILE_NAME = "mock-ai.env"
 logger = logging.getLogger("mock-ai")
 
 
+@dataclass(frozen=True)
+class GeminiFile:
+    file_id: str
+    display_name: str
+    mime_type: str
+    end_state: str
+    size_bytes: int | None = None
+    polled_state: str | None = None
+
+    @property
+    def name(self) -> str:
+        return build_file_name(self.file_id)
+
+    @property
+    def is_uploaded(self) -> bool:
+        return self.size_bytes is not None
+
+    @property
+    def is_reported_active(self) -> bool:
+        return self.polled_state == FILE_STATE_ACTIVE
+
+    @property
+    def next_poll_state(self) -> str:
+        return FILE_STATE_PROCESSING if self.polled_state is None else self.end_state
+
+
+class GeminiFileStore:
+    def __init__(self) -> None:
+        self._files_by_id: dict[str, GeminiFile] = {}
+        self._lock = threading.Lock()
+
+    def start_upload(self, display_name: str, mime_type: str, end_state: str) -> GeminiFile:
+        file_id = uuid.uuid4().hex[:FILE_ID_CHARS]
+        started = GeminiFile(file_id, display_name, mime_type, end_state)
+        with self._lock:
+            self._files_by_id[file_id] = started
+        return started
+
+    def finish_upload(self, file_id: str, size_bytes: int) -> GeminiFile | None:
+        with self._lock:
+            started = self._files_by_id.get(file_id)
+            if started is None:
+                return None
+            uploaded = replace(started, size_bytes=size_bytes)
+            self._files_by_id[file_id] = uploaded
+            return uploaded
+
+    def poll_file(self, file_id: str) -> GeminiFile | None:
+        with self._lock:
+            found = self._files_by_id.get(file_id)
+            if found is None or not found.is_uploaded:
+                return None
+            polled = replace(found, polled_state=found.next_poll_state)
+            self._files_by_id[file_id] = polled
+            return polled
+
+    def find_file(self, file_id: str) -> GeminiFile | None:
+        with self._lock:
+            found = self._files_by_id.get(file_id)
+        return found if found and found.is_uploaded else None
+
+    def delete_file(self, file_id: str) -> GeminiFile | None:
+        with self._lock:
+            return self._files_by_id.pop(file_id, None)
+
+
+def build_file_name(file_id: str) -> str:
+    return f"files/{file_id}"
+
+
+def gemini_file_to_json(gemini_file: GeminiFile) -> dict[str, Any]:
+    return {
+        "name": gemini_file.name,
+        "displayName": gemini_file.display_name,
+        "mimeType": gemini_file.mime_type,
+        "sizeBytes": str(gemini_file.size_bytes or 0),
+        "uri": f"https://{GEMINI_HOST}/v1beta/{gemini_file.name}",
+        "state": gemini_file.polled_state or FILE_STATE_PROCESSING,
+    }
+
+
+def find_media_file(media: SentMedia, gemini_files: GeminiFileStore) -> GeminiFile | None:
+    file_path = GEMINI_FILE_PATH.search(media.file_uri)
+    return gemini_files.find_file(file_path.group(1)) if file_path else None
+
+
+def describe_media(media: SentMedia, gemini_file: GeminiFile | None) -> dict[str, Any]:
+    return {
+        "label": media.label,
+        "mimeType": media.mime_type,
+        "fileUri": media.file_uri,
+        "videoMetadata": media.video_metadata,
+        "isKnownFile": gemini_file is not None,
+        "polledState": gemini_file.polled_state if gemini_file else None,
+    }
+
+
+def to_upload_end_state(rule: dict[str, Any]) -> str:
+    return (
+        FILE_STATE_FAILED if rule.get(UPLOAD_RULE_KEY) == FILE_STATE_FAILED else FILE_STATE_ACTIVE
+    )
+
+
+def to_upload_failure(rule: dict[str, Any]) -> dict[str, Any]:
+    if rule.get(UPLOAD_RULE_KEY) != UPLOAD_ERROR_RULE:
+        return rule
+    return {"status": HTTPStatus.INTERNAL_SERVER_ERROR.value, **rule}
+
+
 def gemini_body_to_ask(model: str, body: dict[str, Any]) -> AskView:
     instructions = "".join(
         part.get("text", "") for part in body.get("systemInstruction", {}).get("parts", [])
@@ -62,14 +199,31 @@ def gemini_body_to_ask(model: str, body: dict[str, Any]) -> AskView:
     parts = (body.get("contents") or [{}])[0].get("parts", [])
     texts: list[str] = []
     images: list[SentImage] = []
+    media: list[SentMedia] = []
     for part in parts:
         if "text" in part:
             texts.append(part["text"])
         elif "inlineData" in part:
-            label = texts.pop() if len(texts) > 1 else ""
-            images.append(decode_base64_image(label, part["inlineData"]["data"]))
+            images.append(decode_base64_image(pop_part_label(texts), part["inlineData"]["data"]))
+        elif "fileData" in part:
+            media.append(file_part_to_media(pop_part_label(texts), part))
     schema = body.get("generationConfig", {}).get("responseJsonSchema")
-    return AskView("gemini", model, instructions, texts[0] if texts else "", images, schema)
+    message = texts[0] if texts else ""
+    return AskView(GEMINI_AI, model, instructions, message, images, schema, media)
+
+
+def file_part_to_media(label: str, part: dict[str, Any]) -> SentMedia:
+    file_data = part["fileData"]
+    return SentMedia(
+        label=label,
+        mime_type=str(file_data.get("mimeType", "")),
+        file_uri=str(file_data.get("fileUri", "")),
+        video_metadata=part.get("videoMetadata"),
+    )
+
+
+def pop_part_label(texts: list[str]) -> str:
+    return texts.pop() if len(texts) > 1 else ""
 
 
 def openai_body_to_ask(body: dict[str, Any]) -> AskView:
@@ -80,9 +234,8 @@ def openai_body_to_ask(body: dict[str, Any]) -> AskView:
         if block.get("type") == "input_text":
             texts.append(block["text"])
         elif block.get("type") == "input_image":
-            label = texts.pop() if len(texts) > 1 else ""
             image_url = str(block.get("image_url", ""))
-            images.append(decode_base64_image(label, image_url.split(",", 1)[-1]))
+            images.append(decode_base64_image(pop_part_label(texts), image_url.split(",", 1)[-1]))
     schema = body.get("text", {}).get("format", {}).get("schema")
     return AskView(
         "openai",
@@ -169,7 +322,10 @@ class AiApiHandler(BaseHTTPRequestHandler):
         logger.info("%s %s", headers.get("Host", "-") if headers else "-", format % args)
 
     def do_POST(self) -> None:
-        body_bytes = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        if self.path.split("?", 1)[0] == GEMINI_UPLOAD_PATH:
+            self._answer_upload()
+            return
+        body_bytes = self._read_body()
         body = json.loads(body_bytes or b"{}")
         gemini_path = GEMINI_STREAM_PATH.match(self.path)
         if gemini_path:
@@ -177,7 +333,21 @@ class AiApiHandler(BaseHTTPRequestHandler):
         elif self.path.split("?", 1)[0] == OPENAI_RESPONSES_PATH:
             self._answer_openai(body, len(body_bytes))
         else:
-            self._send_json(404, {"error": {"message": f"mock-ai does not serve {self.path}"}})
+            self._send_not_served()
+
+    def do_GET(self) -> None:
+        file_path = GEMINI_FILE_PATH.match(self.path)
+        if file_path:
+            self._answer_file_poll(file_path.group(1))
+        else:
+            self._send_not_served()
+
+    def do_DELETE(self) -> None:
+        file_path = GEMINI_FILE_PATH.match(self.path)
+        if file_path:
+            self._answer_file_delete(file_path.group(1))
+        else:
+            self._send_not_served()
 
     def _answer_gemini(self, model: str, body: dict[str, Any], body_bytes: int) -> None:
         state_dir = self.server.state_dir
@@ -185,22 +355,170 @@ class AiApiHandler(BaseHTTPRequestHandler):
         rule = take_scenario_rule(state_dir, ask.ai, f"{ask.instructions}\n{ask.message}") or {}
         generation_config = dict(body.get("generationConfig", {}))
         generation_config.pop("responseJsonSchema", None)
+        media_files = [
+            (media, find_media_file(media, self.server.gemini_files)) for media in ask.media
+        ]
         record_call(
             state_dir,
             {
                 **describe_ask(ask),
-                "url": f"https://{self.headers.get('Host')}{self.path}",
-                **to_key_facts(self.headers.get(GEMINI_KEY_HEADER), self.path),
+                **self._describe_gemini_request(),
                 "bodyKeys": sorted(body),
                 "generationConfig": generation_config,
+                "media": [describe_media(media, gemini_file) for media, gemini_file in media_files],
                 "bodyBytes": body_bytes,
                 "scenario": rule or None,
             },
         )
-        if self._send_scenario_failure(rule):
+        if self._send_scenario_failure(rule) or self._send_media_failure(media_files):
             return
         answer = build_scenario_answer(ask, rule)
         self._stream_sse(build_gemini_events(answer, rule), rule, with_event_names=False)
+
+    def _answer_upload(self) -> None:
+        commands = {
+            command.strip() for command in self.headers.get(UPLOAD_COMMAND_HEADER, "").split(",")
+        }
+        if UPLOAD_START_COMMAND in commands:
+            self._start_upload()
+        elif UPLOAD_FINALIZE_COMMAND in commands:
+            self._finish_upload()
+        else:
+            self._send_error(
+                HTTPStatus.BAD_REQUEST, "mock-ai takes only start and upload, finalize"
+            )
+
+    def _start_upload(self) -> None:
+        file_request = json.loads(self._read_body() or b"{}").get("file", {})
+        display_name = str(file_request.get("display_name") or file_request.get("displayName", ""))
+        mime_type = self.headers.get(UPLOAD_TYPE_HEADER, "")
+        declared_length = self.headers.get(UPLOAD_LENGTH_HEADER, "")
+        rule = take_upload_rule(self.server.state_dir, f"{display_name}\n{mime_type}") or {}
+        self._record_files_call(
+            "start",
+            {
+                "protocol": self.headers.get(UPLOAD_PROTOCOL_HEADER),
+                "displayName": display_name,
+                "mimeType": mime_type,
+                "declaredBytes": int(declared_length) if declared_length.isdigit() else None,
+                "scenario": rule or None,
+            },
+        )
+        if self._send_scenario_failure(to_upload_failure(rule)):
+            return
+        started = self.server.gemini_files.start_upload(
+            display_name, mime_type, to_upload_end_state(rule)
+        )
+        self.send_response(HTTPStatus.OK)
+        self.send_header(
+            UPLOAD_URL_HEADER,
+            f"https://{GEMINI_HOST}{GEMINI_UPLOAD_PATH}?{UPLOAD_ID_PARAM}={started.file_id}",
+        )
+        self.send_header(UPLOAD_STATUS_HEADER, UPLOAD_ACTIVE_STATUS)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def _finish_upload(self) -> None:
+        size_bytes = self._count_body_bytes()
+        upload_id = parse_qs(urlsplit(self.path).query).get(UPLOAD_ID_PARAM, [""])[0]
+        uploaded = self.server.gemini_files.finish_upload(upload_id, size_bytes)
+        self._record_files_call(
+            "upload",
+            {
+                "command": self.headers.get(UPLOAD_COMMAND_HEADER),
+                "offset": self.headers.get(UPLOAD_OFFSET_HEADER),
+                "file": uploaded.name if uploaded else None,
+                "mimeType": uploaded.mime_type if uploaded else None,
+                "bytes": size_bytes,
+            },
+        )
+        if uploaded is None:
+            self._send_error(HTTPStatus.NOT_FOUND, f"mock-ai has no upload {upload_id}")
+            return
+        self._send_json(HTTPStatus.OK, {"file": gemini_file_to_json(uploaded)})
+
+    def _answer_file_poll(self, file_id: str) -> None:
+        polled = self.server.gemini_files.poll_file(file_id)
+        self._record_files_call(
+            "poll",
+            {"file": build_file_name(file_id), "state": polled.polled_state if polled else None},
+        )
+        if polled is None:
+            self._send_file_not_found(file_id)
+            return
+        self._send_json(HTTPStatus.OK, gemini_file_to_json(polled))
+
+    def _answer_file_delete(self, file_id: str) -> None:
+        deleted = self.server.gemini_files.delete_file(file_id)
+        self._record_files_call(
+            "delete", {"file": build_file_name(file_id), "isKnownFile": deleted is not None}
+        )
+        if deleted is None:
+            self._send_file_not_found(file_id)
+            return
+        self._send_json(HTTPStatus.OK, {})
+
+    def _record_files_call(self, action: str, details: dict[str, Any]) -> None:
+        record_call(
+            self.server.state_dir,
+            {
+                "ai": GEMINI_FILES_AI,
+                "action": action,
+                **self._describe_gemini_request(),
+                **details,
+            },
+        )
+
+    def _describe_gemini_request(self) -> dict[str, Any]:
+        return {
+            "url": f"https://{self.headers.get('Host')}{self.path}",
+            **to_key_facts(self.headers.get(GEMINI_KEY_HEADER), self.path),
+        }
+
+    def _send_media_failure(self, media_files: list[tuple[SentMedia, GeminiFile | None]]) -> bool:
+        for media, gemini_file in media_files:
+            if gemini_file is None or not gemini_file.is_reported_active:
+                self._send_error(
+                    HTTPStatus.BAD_REQUEST,
+                    f"File {media.file_uri} is not in an ACTIVE state and usage is not allowed.",
+                )
+                return True
+        return False
+
+    def _send_file_not_found(self, file_id: str) -> None:
+        self._send_error(HTTPStatus.NOT_FOUND, f"File {build_file_name(file_id)} does not exist.")
+
+    def _send_not_served(self) -> None:
+        self._send_json(404, {"error": {"message": f"mock-ai does not serve {self.path}"}})
+
+    def _read_body(self) -> bytes:
+        return self.rfile.read(int(self.headers.get("Content-Length") or 0))
+
+    def _count_body_bytes(self) -> int:
+        if self.headers.get("Transfer-Encoding", "").casefold() == CHUNKED_ENCODING:
+            return self._count_chunked_bytes()
+        return self._discard_bytes(int(self.headers.get("Content-Length") or 0))
+
+    def _count_chunked_bytes(self) -> int:
+        total_bytes = 0
+        while True:
+            chunk_bytes = int(self.rfile.readline().split(b";", 1)[0].strip() or b"0", 16)
+            if chunk_bytes == 0:
+                break
+            total_bytes += self._discard_bytes(chunk_bytes)
+            self.rfile.readline()
+        while self.rfile.readline().strip():
+            continue
+        return total_bytes
+
+    def _discard_bytes(self, byte_count: int) -> int:
+        remaining_bytes = byte_count
+        while remaining_bytes > 0:
+            data = self.rfile.read(min(remaining_bytes, TUNNEL_BUFFER_BYTES))
+            if not data:
+                break
+            remaining_bytes -= len(data)
+        return byte_count - remaining_bytes
 
     def _answer_openai(self, body: dict[str, Any], body_bytes: int) -> None:
         state_dir = self.server.state_dir
@@ -235,11 +553,11 @@ class AiApiHandler(BaseHTTPRequestHandler):
         time.sleep(float(rule.get("silent_sec", 0)))
         if not rule.get("status"):
             return False
-        message = rule.get("error", "mock error")
-        self._send_json(
-            int(rule["status"]), {"error": {"code": rule["status"], "message": message}}
-        )
+        self._send_error(int(rule["status"]), rule.get("error", "mock error"))
         return True
+
+    def _send_error(self, status: int, message: str) -> None:
+        self._send_json(status, {"error": {"code": status, "message": message}})
 
     def _send_json(self, status: int, payload: dict[str, Any]) -> None:
         data = json.dumps(payload).encode("utf-8")
@@ -335,6 +653,7 @@ class MockAiServer(ThreadingHTTPServer):
         super().__init__((LOOPBACK_HOST, port), ProxyHandler)
         self.state_dir = state_dir
         self.tls_context = tls_context
+        self.gemini_files = GeminiFileStore()
 
 
 def ensure_certificate(state_dir: Path) -> tuple[Path, Path, Path]:

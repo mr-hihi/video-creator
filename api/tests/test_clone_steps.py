@@ -38,7 +38,7 @@ from app.modules.film_clones.models import (
     ShotSize,
 )
 from app.modules.film_clones.repository import FilmCloneRepository
-from app.modules.jobs.film_analysis.notes_passes import WrittenNotes
+from app.modules.jobs.film_analysis.notes_passes import CapturedFilmFrame, WrittenNotes
 from app.modules.jobs.models import Job, JobOutputKind, JobStatus, JobType
 from app.modules.jobs.repository import JobRepository
 from app.modules.jobs.storage import JobStorage
@@ -54,6 +54,7 @@ FINISHED_AT = datetime(2026, 10, 11, 9, 0, tzinfo=UTC)
 VIDEO_NOTES = "# Palace escape\n\n> Source: escape.mp4 · Duration: 01:00 · Language: ko\n"
 FRAME_ONE = "images/moment-01-00m05s.jpg"
 FRAME_TWO = "images/moment-02-00m40s.jpg"
+FRAME_THREE = "images/moment-03-00m20s.jpg"
 
 
 def build_clone(**overrides) -> FilmClone:
@@ -195,8 +196,16 @@ def saved_frames(tmp_path):
     notes = WrittenNotes(
         VIDEO_NOTES,
         [
-            CapturedMoment(KeyMoment(5000, "Greeting"), FRAME_ONE),
-            CapturedMoment(KeyMoment(40000, "Scene change"), FRAME_TWO),
+            CapturedFilmFrame(
+                CapturedMoment(KeyMoment(5000, "Greeting"), FRAME_ONE), FrameKind.DIALOGUE
+            ),
+            CapturedFilmFrame(
+                CapturedMoment(KeyMoment(20000, "Ambient: a dog barks"), FRAME_THREE),
+                FrameKind.SOUND,
+            ),
+            CapturedFilmFrame(
+                CapturedMoment(KeyMoment(40000, "Scene change"), FRAME_TWO), FrameKind.SCENE
+            ),
         ],
     )
     CloneFrameSaver(tools).run(job, notes, steps.append)
@@ -732,11 +741,12 @@ def test_frame_saver_asks_the_ai_nothing_and_reports_no_step(saved_frames):
 
 
 def test_frame_saver_saves_one_empty_shot_per_frame(saved_frames):
-    first, second = saved_frames.shots
+    first, second, third = saved_frames.shots
     assert saved_frames.assets == []
     assert (first.frame, first.frame_kind, first.at_ms) == (FRAME_ONE, FrameKind.DIALOGUE, 5000)
-    assert (second.frame, second.frame_kind, second.at_ms) == (FRAME_TWO, FrameKind.SCENE, 40000)
-    assert (second.position, second.shot_size, second.asset_ids) == (1, None, [])
+    assert (second.frame, second.frame_kind, second.at_ms) == (FRAME_THREE, FrameKind.SOUND, 20000)
+    assert (third.frame, third.frame_kind, third.at_ms) == (FRAME_TWO, FrameKind.SCENE, 40000)
+    assert (third.position, third.shot_size, third.asset_ids) == (2, None, [])
 
 
 def test_frame_saver_sets_the_aspect_from_the_frames(saved_frames):

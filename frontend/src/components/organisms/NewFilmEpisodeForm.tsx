@@ -37,7 +37,6 @@ import {
 } from "@/features/films/utils";
 import { FILM_ANALYSIS_JOB_TYPES } from "@/features/jobs/constants";
 import { useJobsQuery } from "@/features/jobs/queries";
-import { AI_STEP_GROUPS_BY_RUN } from "@/features/settings/constants";
 import { useAiModelStatus } from "@/features/settings/queries";
 import { isAiModelBlocked } from "@/features/settings/utils";
 import { IS_CAPTCHA_ENABLED } from "@/lib/captcha/captchaWidget";
@@ -56,7 +55,7 @@ export function NewFilmEpisodeForm({ project, isReadOnly }: NewFilmEpisodeFormPr
   const analysesQuery = useJobsQuery(FILM_ANALYSIS_JOB_TYPES);
   const createEpisodeMutation = useCreateFilmEpisodeMutation();
   const episodeActionMutation = useEpisodeActionMutation();
-  const aiModelStatus = useAiModelStatus(AI_STEP_GROUPS_BY_RUN.filmScript);
+  const aiModelStatus = useAiModelStatus({ kind: "filmScript" });
   const captchaRef = useRef<CaptchaHandle>(null);
   const [source, setSource] = useState<NewEpisodeSource>(DEFAULT_EPISODE_SOURCE);
   const [ideaText, setIdeaText] = useState("");

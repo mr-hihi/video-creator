@@ -12,7 +12,13 @@ from app.modules.app_settings.service import AppSettingService
 from app.modules.app_settings.setting_rules import ScriptLanguage
 from app.modules.providers.provider_catalog import MediaFeature, ProviderId
 
-NO_STEP_MODELS = {"moments": None, "filmAnalysis": None, "filmScript": None, "filmClone": None}
+NO_STEP_MODELS = {
+    "moments": None,
+    "audio": None,
+    "filmAnalysis": None,
+    "filmScript": None,
+    "filmClone": None,
+}
 GEMINI_ARGON = {"provider": "google", "model": "gemini-4-argon"}
 GPT_LUNA = {"provider": "openai", "model": "gpt-6-luna"}
 DEFAULT_SETTINGS = {
@@ -20,6 +26,7 @@ DEFAULT_SETTINGS = {
     "aiModel": {"provider": "claude_cli", "model": "default"},
     "aiStepModels": NO_STEP_MODELS,
     "inputMode": "subtitles",
+    "filmAnalysisInputMode": "subtitles",
     "filmCloneInputMode": "subtitles",
     "filmCloneImageProvider": None,
     "filmStudioImageProvider": None,
@@ -28,8 +35,9 @@ DEFAULT_SETTINGS = {
 STORED_VALUES = {
     "scriptLanguage": "ja",
     "aiModel": GEMINI_ARGON,
-    "aiStepModels": {**NO_STEP_MODELS, "filmClone": GPT_LUNA},
+    "aiStepModels": {**NO_STEP_MODELS, "audio": GEMINI_ARGON, "filmClone": GPT_LUNA},
     "inputMode": "whole_video",
+    "filmAnalysisInputMode": "full_video",
     "filmCloneInputMode": "whole_video",
     "filmCloneImageProvider": "openai",
     "filmStudioImageProvider": "sd_webui",
@@ -86,9 +94,21 @@ def default_ai_choice(empty_repository):
 
 @pytest.fixture
 def stored_input_modes(empty_repository):
-    empty_repository.find_values.return_value = {"filmCloneInputMode": "whole_video"}
+    empty_repository.find_values.return_value = {
+        "filmAnalysisInputMode": "full_video",
+        "filmCloneInputMode": "whole_video",
+    }
     service = AppSettingService(empty_repository)
-    return (service.get_input_mode(), service.get_film_clone_input_mode())
+    return (
+        service.get_input_mode(),
+        service.get_film_analysis_input_mode(),
+        service.get_film_clone_input_mode(),
+    )
+
+
+@pytest.fixture
+def default_film_analysis_input_mode(empty_repository):
+    return AppSettingService(empty_repository).get_film_analysis_input_mode()
 
 
 @pytest.fixture
@@ -121,7 +141,9 @@ def legacy_settings(empty_repository):
     empty_repository.find_values.return_value = {
         "aiModel": "gemini",
         "aiStepModels": {"filmClone": {"provider": "google", "model": "gemini-1"}},
-        "filmCloneInputMode": "frames",
+        "inputMode": "full_video",
+        "filmAnalysisInputMode": "frames",
+        "filmCloneInputMode": "full_video",
         "filmCloneImageProvider": "dall-e",
         "filmStudioClipProvider": "sd_webui",
     }
@@ -171,6 +193,10 @@ def updated_ai_settings(empty_repository):
         ({"inputMode": "audio"}, "Invalid value for 'inputMode'"),
         ({"inputMode": None}, "Invalid value for 'inputMode'"),
         ({"filmCloneInputMode": "frames"}, "Invalid value for 'filmCloneInputMode'"),
+        ({"inputMode": "full_video"}, "Invalid value for 'inputMode'"),
+        ({"filmCloneInputMode": "full_video"}, "Invalid value for 'filmCloneInputMode'"),
+        ({"filmAnalysisInputMode": "frames"}, "Invalid value for 'filmAnalysisInputMode'"),
+        ({"aiStepModels": {"audio": "gemini"}}, "Invalid value for 'aiStepModels'"),
         ({"filmCloneImageProvider": "dall-e"}, "Invalid value for 'filmCloneImageProvider'"),
         ({"filmCloneImageProvider": "elevenlabs"}, "Invalid value for 'filmCloneImageProvider'"),
         ({"filmStudioImageProvider": 3}, "Invalid value for 'filmStudioImageProvider'"),
@@ -237,6 +263,7 @@ def test_the_ai_settings_are_read_as_model_choices(stored_ai_choice):
         AiModelChoice(ProviderId.GOOGLE, "gemini-4-argon"),
         {
             AiStepGroup.MOMENTS: None,
+            AiStepGroup.AUDIO: AiModelChoice(ProviderId.GOOGLE, "gemini-4-argon"),
             AiStepGroup.FILM_ANALYSIS: None,
             AiStepGroup.FILM_SCRIPT: None,
             AiStepGroup.FILM_CLONE: AiModelChoice(ProviderId.OPENAI, "gpt-6-luna"),
@@ -253,8 +280,12 @@ def test_the_ai_settings_default_to_the_claude_cli_and_subtitles(default_ai_choi
     )
 
 
-def test_film_clone_reads_its_own_input_mode(stored_input_modes):
-    assert stored_input_modes == (InputMode.SUBTITLES, InputMode.WHOLE_VIDEO)
+def test_film_analysis_and_film_clone_read_their_own_input_modes(stored_input_modes):
+    assert stored_input_modes == (InputMode.SUBTITLES, InputMode.FULL_VIDEO, InputMode.WHOLE_VIDEO)
+
+
+def test_the_film_analysis_input_mode_defaults_to_subtitles(default_film_analysis_input_mode):
+    assert default_film_analysis_input_mode is InputMode.SUBTITLES
 
 
 def test_the_film_clone_input_mode_defaults_to_subtitles(default_film_clone_input_mode):

@@ -42,7 +42,10 @@ created; the user edits presets in the `Prompt override` tab of `/settings`. Bus
 chosen in Settings (Claude via `claude -p`, Gemini or OpenAI) picks key moments from the transcript — and, in the
 `whole_video` input mode, from one frame per second too → capture one frame per moment
 (ffmpeg) → write Markdown where each moment is a `##` heading with its screenshot and the transcript
-that follows it.
+that follows it. Film Analysis and Film Clone in `whole_video` (`Frame image + audio`) also send the audio to
+Gemini, which names the speakers and marks the sounds that become frames; Film Analysis in `full_video`
+sends the compressed film to Gemini instead and skips transcript, moments and frames —
+[business/8-ai-models.md](business/8-ai-models.md) § 8.3.
 
 ## Job lifecycle
 

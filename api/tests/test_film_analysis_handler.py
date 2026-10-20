@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -5,8 +6,20 @@ import pytest
 
 from app.modules.ai_models.ai_caller import AiCaller
 from app.modules.ai_models.ai_calls import AiCallError, AiLimits, AiModelChoice, AiStepGroup
-from app.modules.jobs.errors import NoVideoNotesError
+from app.modules.jobs.errors import NoCompressedVideoError, NoVideoNotesError
+from app.modules.jobs.film_analysis.audio_listener import (
+    AudioListener,
+    AudioListenerConfig,
+    AudioListenerTools,
+)
 from app.modules.jobs.film_analysis.frame_steps import FilmFrameSteps, FilmFrameTools
+from app.modules.jobs.film_analysis.full_video import (
+    FullVideoPassTools,
+    FullVideoPromptPasses,
+    FullVideoSteps,
+    VideoCompressor,
+    VideoCompressorConfig,
+)
 from app.modules.jobs.film_analysis.handler import (
     FilmAnalysisHandler,
     FilmAnalysisRerunHandler,
@@ -74,7 +87,33 @@ GEMINI_CHOICE = AiModelChoice(ProviderId.GOOGLE, "gemini-4-argon")
 MOMENT_LIMITS = AiLimits(timeout_sec=600)
 PASS_LIMITS = AiLimits(timeout_sec=900)
 MAX_IMAGES_BY_PROVIDER = {ProviderId.CLAUDE_CLI: 100, ProviderId.GOOGLE: 300}
-MODELS_BY_GROUP = {AiStepGroup.MOMENTS: CLAUDE_CHOICE, AiStepGroup.FILM_ANALYSIS: GEMINI_CHOICE}
+AUDIO_LIMITS = AiLimits(timeout_sec=900)
+MODELS_BY_GROUP = {
+    AiStepGroup.MOMENTS: CLAUDE_CHOICE,
+    AiStepGroup.AUDIO: GEMINI_CHOICE,
+    AiStepGroup.FILM_ANALYSIS: GEMINI_CHOICE,
+}
+AUDIO_REPLY = {
+    "speakers": [{"name": "Mai", "voice": "young woman, soft voice"}],
+    "lines": [{"atMs": 0, "speaker": "Mai"}],
+    "sounds": [{"atMs": 10_000, "kind": "ambient", "description": "a dog barks"}],
+}
+WHOLE_VIDEO_STEPS = [
+    JobStep.LISTENING_TO_AUDIO,
+    JobStep.SAMPLING_FRAMES,
+    JobStep.PICKING_MOMENTS,
+    JobStep.DETECTING_SCENES,
+    JobStep.CAPTURING_FRAMES,
+    JobStep.WRITING_MARKDOWN,
+    JobStep.WRITING_CHARACTER_IMAGE_PROMPTS,
+    JobStep.WRITING_CHARACTER_VOICE_PROMPTS,
+    JobStep.WRITING_SCENE_PROMPTS,
+]
+PASS_STEPS = [
+    JobStep.WRITING_CHARACTER_IMAGE_PROMPTS,
+    JobStep.WRITING_CHARACTER_VOICE_PROMPTS,
+    JobStep.WRITING_SCENE_PROMPTS,
+]
 CHARACTERS_ANSWER = "## Character A"
 FRAMES_ATTACHED_LINE = "The frames referenced in the notes are attached below"
 
@@ -89,14 +128,17 @@ def build_job(job_type: JobType, options: dict) -> Job:
     )
 
 
-def build_upload_job() -> Job:
-    return build_job(JobType.FILM_ANALYSIS, {"language": "vi", "maxFrames": 6, "prompts": PROMPTS})
+def build_upload_job(**options) -> Job:
+    return build_job(
+        JobType.FILM_ANALYSIS,
+        {"language": "vi", "maxFrames": 6, "prompts": PROMPTS, **options},
+    )
 
 
-def build_youtube_job() -> Job:
+def build_youtube_job(**options) -> Job:
     return build_job(
         JobType.YOUTUBE_FILM_ANALYSIS,
-        {"url": VIDEO_URL, "videoId": VIDEO_ID, "language": "auto", "prompts": PROMPTS},
+        {"url": VIDEO_URL, "videoId": VIDEO_ID, "language": "auto", "prompts": PROMPTS, **options},
     )
 
 
@@ -129,7 +171,15 @@ def media():
     processor.extract_audio.side_effect = lambda video_path, audio_path: audio_path
     processor.sample_frames.side_effect = write_samples
     processor.capture_frame.side_effect = write_frame
+    processor.split_audio.side_effect = lambda split: write_part(split.output_dir, "m4a")
+    processor.compress_video.side_effect = lambda compression: write_part(
+        compression.output_dir, "mp4"
+    )
     return processor
+
+
+def write_part(output_dir, extension: str) -> None:
+    (output_dir / f"part-01.{extension}").write_bytes(b"part")
 
 
 def write_frame(video_path, at_ms, output_path) -> None:
@@ -153,6 +203,7 @@ def transcriber():
 def ai_caller():
     caller = MagicMock(spec=AiCaller)
     caller.find_model.side_effect = MODELS_BY_GROUP.get
+    caller.find_google_model.side_effect = MODELS_BY_GROUP.get
     caller.ask_for_json.return_value = OUTLINE_REPLY
     caller.ask_for_text.side_effect = [CHARACTERS_ANSWER, "## Voice A", "## 00:00 — Shot"]
     return caller
@@ -180,7 +231,21 @@ def frame_steps(storage, repository, media, ai_caller, scene_detector):
             ),
             scene_detector=scene_detector,
             frame_capturer=MomentFrameCapturer(storage, media),
+            audio_listener=AudioListener(
+                AudioListenerTools(storage, repository, media, ai_caller),
+                AudioListenerConfig(part_sec=1800, limits=AUDIO_LIMITS),
+            ),
         ),
+    )
+
+
+@pytest.fixture
+def full_video(storage, repository, media, ai_caller):
+    return FullVideoSteps(
+        VideoCompressor(
+            storage, media, VideoCompressorConfig(part_sec=1800, max_side_px=480, max_fps=24)
+        ),
+        FullVideoPromptPasses(FullVideoPassTools(repository, ai_caller, PASS_LIMITS)),
     )
 
 
@@ -219,7 +284,7 @@ def frames_sent_in_spread_passes(storage, repository, ai_caller):
 
 
 @pytest.fixture
-def upload_handler(storage, repository, media, transcriber, frame_steps, prompt_passes):
+def upload_handler(storage, repository, media, transcriber, frame_steps, prompt_passes, full_video):
     return FilmAnalysisHandler(
         storage,
         repository,
@@ -228,6 +293,7 @@ def upload_handler(storage, repository, media, transcriber, frame_steps, prompt_
             transcriber=transcriber,
             frame_steps=frame_steps,
             prompt_passes=prompt_passes,
+            full_video=full_video,
         ),
     )
 
@@ -243,12 +309,15 @@ def transcript_fetcher():
 def downloader():
     youtube_downloader = MagicMock(spec=YtDlpDownloader)
     youtube_downloader.download_video.side_effect = lambda video_url, output_path: output_path
+    youtube_downloader.download_video_with_audio.side_effect = lambda video_url, output_path: (
+        output_path
+    )
     return youtube_downloader
 
 
 @pytest.fixture
 def youtube_handler(
-    storage, repository, transcript_fetcher, downloader, frame_steps, prompt_passes
+    storage, repository, transcript_fetcher, downloader, frame_steps, prompt_passes, full_video
 ):
     return YoutubeFilmAnalysisHandler(
         storage,
@@ -258,6 +327,7 @@ def youtube_handler(
             downloader=downloader,
             frame_steps=frame_steps,
             prompt_passes=prompt_passes,
+            full_video=full_video,
         ),
     )
 
@@ -303,16 +373,81 @@ def picked_ask(ai_caller, upload_steps):
 
 @pytest.fixture
 def whole_video_youtube_steps(youtube_handler, downloader):
-    job = build_youtube_job()
-    job.options["inputMode"] = "whole_video"
     steps: list[JobStep] = []
-    youtube_handler.handle(job, steps.append)
-    return SimpleNamespace(steps=steps, download_count=downloader.download_video.call_count)
+    youtube_handler.handle(build_youtube_job(inputMode="whole_video"), steps.append)
+    return SimpleNamespace(
+        steps=steps,
+        download_with_audio_count=downloader.download_video_with_audio.call_count,
+        download_count=downloader.download_video.call_count,
+    )
 
 
 @pytest.fixture
-def rerun_ai_calls(repository, prompt_passes, ai_caller):
-    FilmAnalysisRerunHandler(repository, prompt_passes).handle(build_rerun_job(), lambda step: None)
+def whole_video_upload(upload_handler, ai_caller, repository, storage):
+    ai_caller.ask_for_json.side_effect = [AUDIO_REPLY, OUTLINE_REPLY]
+    steps: list[JobStep] = []
+    upload_handler.handle(build_upload_job(inputMode="whole_video"), steps.append)
+    return SimpleNamespace(
+        steps=steps,
+        video_notes=repository.save_output.call_args_list[0].args[2],
+        audio_notes=storage.audio_notes_path(JOB_ID).read_text(encoding="utf-8"),
+        audio_dir_exists=storage.audio_dir(JOB_ID).exists(),
+    )
+
+
+@pytest.fixture
+def whole_video_captured_positions_ms(media, whole_video_upload):
+    return [call.args[1] for call in media.capture_frame.call_args_list]
+
+
+@pytest.fixture
+def full_video_upload(upload_handler, ai_caller, repository, storage, transcriber):
+    ai_caller.ask_for_text.side_effect = ["## A", "V1", "S1"]
+    steps: list[JobStep] = []
+    upload_handler.handle(build_upload_job(inputMode="full_video"), steps.append)
+    return SimpleNamespace(
+        steps=steps,
+        outputs={call.args[1]: call.args[2] for call in repository.save_output.call_args_list},
+        job_files=sorted(path.name for path in storage.job_dir(JOB_ID).iterdir()),
+        media=[call.args[1].media[0] for call in ai_caller.ask_for_text.call_args_list],
+    )
+
+
+@pytest.fixture
+def full_video_youtube(youtube_handler, downloader, transcript_fetcher):
+    steps: list[JobStep] = []
+    youtube_handler.handle(build_youtube_job(inputMode="full_video"), steps.append)
+    return SimpleNamespace(steps=steps)
+
+
+@pytest.fixture
+def full_video_rerun(repository, prompt_passes, full_video, storage, ai_caller):
+    storage.compressed_dir(JOB_ID).mkdir(parents=True)
+    write_part(storage.compressed_dir(JOB_ID), "mp4")
+    steps: list[JobStep] = []
+    FilmAnalysisRerunHandler(repository, prompt_passes, full_video).handle(
+        build_rerun_job(inputMode="full_video"), steps.append
+    )
+    return SimpleNamespace(
+        steps=steps,
+        media_paths=[call.args[1].media[0].path for call in ai_caller.ask_for_text.call_args_list],
+    )
+
+
+@pytest.fixture
+def full_video_rerun_without_parts_error(repository, prompt_passes, full_video):
+    handler = FilmAnalysisRerunHandler(repository, prompt_passes, full_video)
+    return capture_error(
+        NoCompressedVideoError,
+        lambda: handler.handle(build_rerun_job(inputMode="full_video"), lambda step: None),
+    )
+
+
+@pytest.fixture
+def rerun_ai_calls(repository, prompt_passes, full_video, ai_caller):
+    FilmAnalysisRerunHandler(repository, prompt_passes, full_video).handle(
+        build_rerun_job(), lambda step: None
+    )
     return SimpleNamespace(
         calls=[
             (call.args[0], call.args[1].instructions, call.args[2])
@@ -354,16 +489,18 @@ def output_kinds_saved_before_failure(repository, voice_pass_failure):
 
 
 @pytest.fixture
-def rerun_steps(repository, prompt_passes):
+def rerun_steps(repository, prompt_passes, full_video):
     steps: list[JobStep] = []
-    FilmAnalysisRerunHandler(repository, prompt_passes).handle(build_rerun_job(), steps.append)
+    FilmAnalysisRerunHandler(repository, prompt_passes, full_video).handle(
+        build_rerun_job(), steps.append
+    )
     return steps
 
 
 @pytest.fixture
-def rerun_without_notes_error(repository, prompt_passes):
+def rerun_without_notes_error(repository, prompt_passes, full_video):
     repository.find_outputs.return_value = {}
-    handler = FilmAnalysisRerunHandler(repository, prompt_passes)
+    handler = FilmAnalysisRerunHandler(repository, prompt_passes, full_video)
     return capture_error(
         NoVideoNotesError, lambda: handler.handle(build_rerun_job(), lambda step: None)
     )
@@ -394,17 +531,99 @@ def test_upload_handler_gives_half_the_frames_to_dialogue(picked_ask):
     )
 
 
-def test_youtube_handler_in_whole_video_mode_downloads_once_before_picking(
+def test_youtube_handler_in_whole_video_mode_downloads_with_audio_once_before_listening(
     whole_video_youtube_steps,
 ):
-    assert whole_video_youtube_steps.steps[:5] == [
+    assert whole_video_youtube_steps.steps == [
         JobStep.FETCHING_TRANSCRIPT,
         JobStep.DOWNLOADING_VIDEO,
-        JobStep.SAMPLING_FRAMES,
-        JobStep.PICKING_MOMENTS,
-        JobStep.DETECTING_SCENES,
+        *WHOLE_VIDEO_STEPS,
     ]
-    assert whole_video_youtube_steps.download_count == 1
+    assert (
+        whole_video_youtube_steps.download_with_audio_count,
+        whole_video_youtube_steps.download_count,
+    ) == (1, 0)
+
+
+def test_upload_handler_in_whole_video_mode_listens_before_sampling(whole_video_upload):
+    assert whole_video_upload.steps == [
+        JobStep.EXTRACTING_AUDIO,
+        JobStep.TRANSCRIBING,
+        *WHOLE_VIDEO_STEPS,
+    ]
+    assert not whole_video_upload.audio_dir_exists
+
+
+def test_whole_video_notes_name_the_speakers_and_head_sound_frames(whole_video_upload):
+    assert (
+        "Hai người gặp nhau.\n\nSpeakers:\n- **Mai** — young woman, soft voice\n\n## 00:00"
+        in whole_video_upload.video_notes
+    )
+    assert "**Mai:** Chào anh.\n\n## 00:10 — Ambient: a dog barks" in whole_video_upload.video_notes
+    assert "## 00:20 — Scene change\n\n![" in whole_video_upload.video_notes
+
+
+def test_whole_video_writes_the_audio_notes(whole_video_upload):
+    assert json.loads(whole_video_upload.audio_notes) == {
+        "speakers": [{"name": "Mai", "voice": "young woman, soft voice"}],
+        "lines": [{"atMs": 0, "speaker": "Mai"}],
+        "sounds": [{"atMs": 10_000, "kind": "ambient", "description": "a dog barks"}],
+    }
+
+
+def test_whole_video_counts_sound_frames(repository, whole_video_captured_positions_ms):
+    assert whole_video_captured_positions_ms == [0, 10_000, 20_000, 40_000]
+    repository.merge_options.assert_called_once_with(
+        JOB_ID, {"frameCounts": {"dialogue": 1, "sound": 1, "scene": 2}}
+    )
+
+
+def test_upload_handler_in_full_video_mode_compresses_then_runs_the_passes(
+    full_video_upload, transcriber, media
+):
+    assert full_video_upload.steps == [JobStep.COMPRESSING_VIDEO, *PASS_STEPS]
+    assert full_video_upload.outputs == {
+        JobOutputKind.CHARACTER_IMAGE_PROMPTS: "## A",
+        JobOutputKind.CHARACTER_VOICE_PROMPTS: "V1",
+        JobOutputKind.SCENE_PROMPTS: "S1",
+    }
+    assert full_video_upload.job_files == ["compressed"]
+    transcriber.transcribe.assert_not_called()
+    media.capture_frame.assert_not_called()
+
+
+def test_full_video_passes_send_the_compressed_part_as_video(full_video_upload, storage):
+    assert {(media.label, media.path, media.mime_type) for media in full_video_upload.media} == {
+        ("[video 00:00–01:00]", storage.compressed_dir(JOB_ID) / "part-01.mp4", "video/mp4")
+    }
+
+
+def test_youtube_handler_in_full_video_mode_skips_the_transcript(
+    full_video_youtube, transcript_fetcher, downloader
+):
+    assert full_video_youtube.steps == [
+        JobStep.DOWNLOADING_VIDEO,
+        JobStep.COMPRESSING_VIDEO,
+        *PASS_STEPS,
+    ]
+    transcript_fetcher.fetch.assert_not_called()
+    downloader.download_video.assert_not_called()
+    downloader.download_video_with_audio.assert_called_once()
+
+
+def test_rerun_of_a_full_video_analysis_sends_its_copied_parts(full_video_rerun, storage):
+    assert full_video_rerun.steps == PASS_STEPS
+    assert full_video_rerun.media_paths == [storage.compressed_dir(JOB_ID) / "part-01.mp4"] * 3
+
+
+def test_rerun_of_a_full_video_analysis_without_parts_fails(
+    full_video_rerun_without_parts_error, ai_caller
+):
+    assert (
+        str(full_video_rerun_without_parts_error)
+        == f"Job {JOB_ID} has no compressed video to reuse"
+    )
+    ai_caller.ask_for_text.assert_not_called()
 
 
 def test_each_pass_records_then_uses_the_film_analysis_model(rerun_ai_calls):

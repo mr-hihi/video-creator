@@ -12,6 +12,7 @@ import { EnlargeableImage } from "./EnlargeableImage";
 
 const FRAME_KIND_BADGE_TONES: Record<FrameKind, BadgeTone> = {
   dialogue: "info",
+  sound: "success",
   scene: "neutral",
 };
 

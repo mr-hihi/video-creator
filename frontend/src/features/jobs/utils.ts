@@ -1,10 +1,21 @@
-import { DEFAULT_INPUT_MODE } from "@/features/settings/constants";
-import { describeInputMode, joinAiUsedDescriptions, listAiUsedDescriptions } from "@/features/settings/utils";
+import {
+  DEFAULT_INPUT_MODE,
+  EMPTY_INPUT_MODE_LABEL,
+  FILM_ANALYSIS_INPUT_MODE_LABELS,
+  VIDEO_TO_MARKDOWN_INPUT_MODE_LABELS,
+} from "@/features/settings/constants";
+import {
+  describeInputMode,
+  isFullVideoInputMode,
+  joinAiUsedDescriptions,
+  listAiUsedDescriptions,
+} from "@/features/settings/utils";
 import { buildJobFileUrl } from "@/lib/api/client";
 import {
   CAPTION_KIND_LABELS,
   COMPLETED_JOB_STEP_LABEL,
   FILM_ANALYSIS_JOB_TYPES,
+  FILM_RESULT_TABS,
   JOB_STEP_LABELS,
   JOB_STEPS_BY_INPUT_MODE,
   MAX_FRAMES_LOWER_LIMIT,
@@ -12,6 +23,7 @@ import {
   NOT_STARTED_JOB_STEP_LABEL,
   UNKNOWN_CAPTION_KIND_LABEL,
   UPLOAD_LANGUAGE_OPTIONS,
+  type FilmResultTab,
 } from "./constants";
 import type { CaptionKind, FrameCounts, Job, JobDetail, JobOutputs, JobStatus, JobStep, JobStepState } from "./types";
 
@@ -19,7 +31,7 @@ const IN_PROGRESS_JOB_STATUSES: ReadonlySet<JobStatus> = new Set(["pending", "pr
 const FINISHED_JOB_STATUSES: ReadonlySet<JobStatus> = new Set(["done", "failed"]);
 const FILM_ANALYSIS_JOB_TYPE_SET: ReadonlySet<Job["type"]> = new Set(FILM_ANALYSIS_JOB_TYPES);
 const MISSING_FRAME_COUNTS_LABEL = "—";
-const MISSING_INPUT_MODE_LABEL = "—";
+const NO_JOB_STEPS: readonly JobStep[] = [];
 const ABSOLUTE_URL_PATTERN = /^(?:[a-z][a-z\d+.-]*:|\/)/i;
 const CURRENT_DIRECTORY_PREFIX = "./";
 
@@ -43,8 +55,14 @@ export function canDeleteJob(job: Pick<Job, "type" | "status">): boolean {
   return isFilmAnalysisJob(job) && isJobFinished(job);
 }
 
-export function canRerunJob(job: Pick<JobDetail, "type" | "status" | "outputs">): boolean {
-  return isFilmAnalysisJob(job) && isJobFinished(job) && Boolean(job.outputs?.videoNotes);
+export function canRerunJob(job: Pick<JobDetail, "type" | "status" | "step" | "options" | "outputs">): boolean {
+  if (!isFilmAnalysisJob(job) || !isJobFinished(job)) return false;
+  return isFullVideoInputMode(job.options.inputMode) ? hasCompressedVideo(job) : Boolean(job.outputs?.videoNotes);
+}
+
+export function listFilmResultTabs(job: Pick<Job, "options">): readonly FilmResultTab[] {
+  if (!isFullVideoInputMode(job.options.inputMode)) return FILM_RESULT_TABS;
+  return FILM_RESULT_TABS.filter((resultTab) => resultTab.outputKey !== "videoNotes");
 }
 
 export function hasAnyJobOutput(outputs: JobOutputs | null): boolean {
@@ -57,7 +75,8 @@ export function isValidMaxFrames(maxFrames: number): boolean {
 
 export function describeFrameCounts(frameCounts: FrameCounts | undefined): string {
   if (!frameCounts) return MISSING_FRAME_COUNTS_LABEL;
-  return `${frameCounts.dialogue} dialogue + ${frameCounts.scene} scene changes`;
+  if (frameCounts.sound === undefined) return `${frameCounts.dialogue} dialogue + ${frameCounts.scene} scene changes`;
+  return `${frameCounts.dialogue} dialogue + ${frameCounts.sound} sounds + ${frameCounts.scene} scene changes`;
 }
 
 export function buildJobDetailPath(jobId: string): string {
@@ -75,7 +94,7 @@ export function describeCurrentJobStep(job: Pick<Job, "status" | "step">): strin
 }
 
 export function listJobSteps(job: Pick<Job, "type" | "options">): readonly JobStep[] {
-  return JOB_STEPS_BY_INPUT_MODE[job.options.inputMode ?? DEFAULT_INPUT_MODE][job.type];
+  return JOB_STEPS_BY_INPUT_MODE[job.options.inputMode ?? DEFAULT_INPUT_MODE][job.type] ?? NO_JOB_STEPS;
 }
 
 export function determineJobStepState(
@@ -101,8 +120,10 @@ export function describeJobAiUsed(job: Pick<Job, "type" | "options" | "aiUsed">)
 }
 
 export function describeJobInputMode(job: Pick<Job, "type" | "options">): string {
-  if (job.type === "film_analysis_rerun") return MISSING_INPUT_MODE_LABEL;
-  return describeInputMode(job.options.inputMode);
+  const inputMode = job.options.inputMode;
+  if (job.type === "film_analysis_rerun" && !isFullVideoInputMode(inputMode)) return EMPTY_INPUT_MODE_LABEL;
+  const labelsByInputMode = isFilmAnalysisJob(job) ? FILM_ANALYSIS_INPUT_MODE_LABELS : VIDEO_TO_MARKDOWN_INPUT_MODE_LABELS;
+  return describeInputMode(inputMode, labelsByInputMode);
 }
 
 export function describeLanguage(languageCode: string): string {
@@ -116,4 +137,11 @@ export function resolveJobImageUrl(jobId: string, assetPath: string): string | u
     ? assetPath.slice(CURRENT_DIRECTORY_PREFIX.length)
     : assetPath;
   return buildJobFileUrl(jobId, relativePath);
+}
+
+function hasCompressedVideo(job: Pick<Job, "type" | "status" | "step" | "options">): boolean {
+  if (job.status === "done") return true;
+  if (job.step === null) return false;
+  const jobSteps = listJobSteps(job);
+  return jobSteps.indexOf(job.step) > jobSteps.indexOf("compressing_video");
 }

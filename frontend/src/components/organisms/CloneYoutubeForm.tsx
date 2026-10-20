@@ -20,7 +20,7 @@ import {
 } from "@/features/filmClones/utils";
 import { UPLOAD_LANGUAGE_OPTIONS, YOUTUBE_LINK_PLACEHOLDER, type UploadLanguage } from "@/features/jobs/constants";
 import { languageChanged, selectUploadLanguage } from "@/features/jobs/uploadPreferencesSlice";
-import { AI_STEP_GROUPS_BY_RUN, FILM_CLONE_SETTINGS_TAB } from "@/features/settings/constants";
+import { FILM_CLONE_SETTINGS_TAB } from "@/features/settings/constants";
 import { useAiModelStatus } from "@/features/settings/queries";
 import { isAiModelBlocked } from "@/features/settings/utils";
 import { IS_CAPTCHA_ENABLED } from "@/lib/captcha/captchaWidget";
@@ -33,7 +33,7 @@ export function CloneYoutubeForm() {
   const dispatch = useAppDispatch();
   const language = useAppSelector(selectUploadLanguage);
   const createCloneMutation = useCreateYoutubeFilmCloneMutation();
-  const aiModelStatus = useAiModelStatus(AI_STEP_GROUPS_BY_RUN.filmClone);
+  const aiModelStatus = useAiModelStatus({ kind: "filmClone" });
   const captchaRef = useRef<CaptchaHandle>(null);
   const [link, setLink] = useState("");
   const [captchaToken, setCaptchaToken] = useState<string>();
@@ -98,13 +98,7 @@ export function CloneYoutubeForm() {
       <PromptPresetSelect selectedPresetId={presetId} isDisabled={isChecking} onChange={setPresetId} />
       <CloneMaxFramesField value={maxFramesText} isDisabled={isChecking} onChange={setMaxFramesText} />
       <AutomaticRunFields automaticRun={automaticRun} isDisabled={isChecking} onChange={setAutomaticRun} />
-      {aiModelStatus && (
-        <AiModelLine
-          status={aiModelStatus}
-          inputMode={aiModelStatus.filmCloneInputMode}
-          inputModeSettingsTab={FILM_CLONE_SETTINGS_TAB}
-        />
-      )}
+      {aiModelStatus && <AiModelLine status={aiModelStatus} inputModeSettingsTab={FILM_CLONE_SETTINGS_TAB} />}
       <FilmCloneMediaLine />
       <Captcha ref={captchaRef} onToken={setCaptchaToken} onTokenCleared={() => setCaptchaToken(undefined)} />
       {createCloneMutation.isError && <ErrorAlert>{createCloneMutation.error.message}</ErrorAlert>}

@@ -12,17 +12,26 @@ import {
   AI_PROVIDER_IDS,
   AI_STEP_GROUP_LABELS,
   AI_STEP_GROUPS,
+  AI_STEP_GROUPS_BY_RUN,
   DEFAULT_INPUT_MODE,
   DEFAULT_SETTINGS_TAB,
   EMPTY_AI_USED_LABEL,
+  EMPTY_INPUT_MODE_LABEL,
+  FILM_ANALYSIS_AI_STEP_GROUPS_BY_INPUT_MODE,
+  FILM_ANALYSIS_INPUT_MODE_LABELS,
+  FILM_CLONE_AI_STEP_GROUPS_BY_INPUT_MODE,
+  FILM_CLONE_INPUT_MODE_LABELS,
+  FULL_VIDEO_INPUT_MODE,
   GENERAL_SETTINGS_TAB,
-  INPUT_MODE_LABELS,
+  GOOGLE_AI_INPUT_MODE_BY_STEP_GROUP,
+  GOOGLE_AI_PROVIDER_ID,
   MEDIA_PROVIDER_SEPARATOR,
   MEDIA_PROVIDER_SETTING_KEYS,
   ROUTES_BY_MEDIA_PROVIDER_SETTING,
   SAME_AS_AI_MODELS_OPTION_VALUE,
   SETTINGS_PATH,
   SETTINGS_TAB_OPTIONS,
+  VIDEO_TO_MARKDOWN_INPUT_MODE_LABELS,
   type SettingsTab,
 } from "./constants";
 import type {
@@ -32,11 +41,13 @@ import type {
   AiModelStatus,
   AiModelsDraft,
   AiModelsUpdate,
+  AiRun,
+  AiRunPlan,
   AiStepGroup,
   AiStepModels,
   AiUsed,
   AppSettings,
-  InputMode,
+  FilmAnalysisInputMode,
   MediaProviderSettingKey,
   MediaProviderStatus,
   ResolvedAiModel,
@@ -62,6 +73,7 @@ export function buildSettingsUpdate(settings: AppSettings, draftSettings: Partia
     aiModel: pickChangedValue(draftSettings.aiModel, settings.aiModel, isSameAiModel),
     aiStepModels: pickChangedValue(draftSettings.aiStepModels, settings.aiStepModels, isSameStepModels),
     inputMode: pickChangedValue(draftSettings.inputMode, settings.inputMode),
+    filmAnalysisInputMode: pickChangedValue(draftSettings.filmAnalysisInputMode, settings.filmAnalysisInputMode),
     filmCloneInputMode: pickChangedValue(draftSettings.filmCloneInputMode, settings.filmCloneInputMode),
     filmCloneImageProvider: pickChangedValue(draftSettings.filmCloneImageProvider, settings.filmCloneImageProvider),
     filmStudioImageProvider: pickChangedValue(draftSettings.filmStudioImageProvider, settings.filmStudioImageProvider),
@@ -80,6 +92,7 @@ export function buildAiModelsUpdate(
     aiModel: pickChangedValue(draft.settings.aiModel, settings.aiModel, isSameAiModel),
     aiStepModels: pickChangedValue(draft.settings.aiStepModels, settings.aiStepModels, isSameStepModels),
     inputMode: pickChangedValue(draft.settings.inputMode, settings.inputMode),
+    filmAnalysisInputMode: pickChangedValue(draft.settings.filmAnalysisInputMode, settings.filmAnalysisInputMode),
     routes: Object.keys(changedRoutes).length > 0 ? changedRoutes : undefined,
     models: Object.keys(changedModels).length > 0 ? changedModels : undefined,
   };
@@ -89,8 +102,22 @@ export function hasSettingsChanges(update: Partial<AppSettings> | AiModelsUpdate
   return Object.values(update).some((value) => value !== undefined);
 }
 
-export function describeInputMode(inputMode: InputMode | undefined): string {
-  return INPUT_MODE_LABELS[inputMode ?? DEFAULT_INPUT_MODE];
+export function describeInputMode(
+  inputMode: FilmAnalysisInputMode | undefined,
+  labelsByInputMode: Partial<Record<FilmAnalysisInputMode, string>>,
+): string {
+  return labelsByInputMode[inputMode ?? DEFAULT_INPUT_MODE] ?? EMPTY_INPUT_MODE_LABEL;
+}
+
+export function isFullVideoInputMode(inputMode: FilmAnalysisInputMode | undefined): boolean {
+  return inputMode === FULL_VIDEO_INPUT_MODE;
+}
+
+export function resolveStepGroupModel(
+  settings: Pick<AppSettings, "aiModel" | "aiStepModels">,
+  group: AiStepGroup,
+): AiModel {
+  return settings.aiStepModels[group] ?? settings.aiModel;
 }
 
 export function hasOnlySameAsAllStepsModels(stepModels: AiStepModels): boolean {
@@ -110,17 +137,23 @@ export function resolveAiModel(aiModel: AiModel, analysisProviders: readonly Pro
 export function buildAiModelStatus(
   settings: AppSettings,
   analysisProviders: readonly Provider[],
-  groups: readonly AiStepGroup[],
+  run: AiRun,
 ): AiModelStatus {
+  const { groups, ...inputModeDetails } = planAiRun(settings, run);
   const groupModels = groups.map((group): AiGroupModel => {
     const aiModel = resolveStepGroupModel(settings, group);
-    return { group, aiModel, ...resolveAiModel(aiModel, analysisProviders) };
+    return {
+      group,
+      aiModel,
+      ...resolveAiModel(aiModel, analysisProviders),
+      needsGoogleAi: isGoogleAiRequired(group, inputModeDetails.inputMode) && !isGoogleAiModel(aiModel),
+    };
   });
-  return { groupModels, inputMode: settings.inputMode, filmCloneInputMode: settings.filmCloneInputMode };
+  return { groupModels, ...inputModeDetails };
 }
 
 export function isAiModelBlocked(status: AiModelStatus | undefined): boolean {
-  return status?.groupModels.some((groupModel) => !groupModel.isSetUp) === true;
+  return status?.groupModels.some((groupModel) => !groupModel.isSetUp || groupModel.needsGoogleAi) === true;
 }
 
 export function listMissingAiProviderNames(status: AiModelStatus): string[] {
@@ -128,12 +161,16 @@ export function listMissingAiProviderNames(status: AiModelStatus): string[] {
   return [...new Set(missingGroupModels.map((groupModel) => groupModel.providerName))];
 }
 
+export function listGroupsNeedingGoogleAi(status: AiModelStatus): AiStepGroup[] {
+  return status.groupModels.filter((groupModel) => groupModel.needsGoogleAi).map((groupModel) => groupModel.group);
+}
+
 export function describeAiModelLine(status: AiModelStatus): string {
   return `AI: ${describeAiGroupModels(status.groupModels)}`;
 }
 
-export function describeInputModeLine(inputMode: InputMode): string {
-  return `Input: ${describeInputMode(inputMode)}`;
+export function describeInputModeLine(inputModeLabel: string): string {
+  return `Input: ${inputModeLabel}`;
 }
 
 export function describeMediaProviderLine(imageProviderName: string, clipProviderName?: string): string {
@@ -144,6 +181,21 @@ export function describeMediaProviderLine(imageProviderName: string, clipProvide
 
 export function buildMissingAiKeyHint(providerName: string): string {
   return `Add the ${providerName} key in Settings → General.`;
+}
+
+export function buildGoogleAiModelHint(group: AiStepGroup): string {
+  return `Pick a Google AI model for ${AI_STEP_GROUP_LABELS[group]} in Settings → AI models.`;
+}
+
+export function buildGoogleAiModelWarning(
+  group: AiStepGroup,
+  aiModel: AiModel,
+  shownInputModes: readonly FilmAnalysisInputMode[],
+): string | undefined {
+  if (isGoogleAiModel(aiModel)) return undefined;
+  const googleAiInputMode = shownInputModes.find((inputMode) => isGoogleAiRequired(group, inputMode));
+  if (googleAiInputMode === undefined) return undefined;
+  return `${FILM_ANALYSIS_INPUT_MODE_LABELS[googleAiInputMode]} needs a Google AI model here.`;
 }
 
 export function resolveMediaProvider(
@@ -241,15 +293,58 @@ export function joinAiUsedDescriptions(descriptions: readonly string[]): string 
 
 function describeAiGroupModels(groupModels: readonly AiGroupModel[]): string {
   const [firstGroupModel] = groupModels;
-  const isOneModel = groupModels.every((groupModel) => isSameAiModel(groupModel.aiModel, firstGroupModel.aiModel));
+  const isOneModel = groupModels.every(
+    (groupModel) => !groupModel.needsGoogleAi && isSameAiModel(groupModel.aiModel, firstGroupModel.aiModel),
+  );
   if (isOneModel) return describeResolvedAiModel(firstGroupModel);
   return groupModels
-    .map((groupModel) => `${AI_STEP_GROUP_LABELS[groupModel.group]} — ${describeResolvedAiModel(groupModel)}`)
+    .map((groupModel) => `${AI_STEP_GROUP_LABELS[groupModel.group]} — ${describeGroupModel(groupModel)}`)
     .join(AI_MODEL_LIST_SEPARATOR);
+}
+
+function describeGroupModel(groupModel: AiGroupModel): string {
+  const modelDescription = describeResolvedAiModel(groupModel);
+  return groupModel.needsGoogleAi ? `${modelDescription} — needs Google AI` : modelDescription;
 }
 
 function describeResolvedAiModel(resolvedModel: ResolvedAiModel): string {
   return resolvedModel.isSetUp ? resolvedModel.label : `${resolvedModel.label} — not set up`;
+}
+
+function planAiRun(settings: AppSettings, run: AiRun): AiRunPlan {
+  switch (run.kind) {
+    case "videoToMarkdown":
+      return {
+        groups: AI_STEP_GROUPS_BY_RUN.videoToMarkdown,
+        inputMode: settings.inputMode,
+        inputModeLabel: VIDEO_TO_MARKDOWN_INPUT_MODE_LABELS[settings.inputMode],
+      };
+    case "filmAnalysis":
+      return {
+        groups: FILM_ANALYSIS_AI_STEP_GROUPS_BY_INPUT_MODE[settings.filmAnalysisInputMode],
+        inputMode: settings.filmAnalysisInputMode,
+        inputModeLabel: FILM_ANALYSIS_INPUT_MODE_LABELS[settings.filmAnalysisInputMode],
+      };
+    case "filmClone":
+      return {
+        groups: FILM_CLONE_AI_STEP_GROUPS_BY_INPUT_MODE[settings.filmCloneInputMode],
+        inputMode: settings.filmCloneInputMode,
+        inputModeLabel: FILM_CLONE_INPUT_MODE_LABELS[settings.filmCloneInputMode],
+      };
+    case "filmAnalysisRerun":
+      return { groups: AI_STEP_GROUPS_BY_RUN.filmAnalysisRerun, inputMode: run.sourceInputMode };
+    case "filmScript":
+      return { groups: AI_STEP_GROUPS_BY_RUN.filmScript };
+  }
+}
+
+function isGoogleAiRequired(group: AiStepGroup, inputMode: FilmAnalysisInputMode | undefined): boolean {
+  const googleAiInputMode = GOOGLE_AI_INPUT_MODE_BY_STEP_GROUP[group];
+  return googleAiInputMode !== undefined && googleAiInputMode === inputMode;
+}
+
+function isGoogleAiModel(aiModel: AiModel): boolean {
+  return aiModel.provider === GOOGLE_AI_PROVIDER_ID;
 }
 
 function isSameAiModel(leftModel: AiModel | null, rightModel: AiModel | null): boolean {
@@ -260,9 +355,6 @@ function isSameStepModels(leftStepModels: AiStepModels, rightStepModels: AiStepM
   return AI_STEP_GROUPS.every((group) => isSameAiModel(leftStepModels[group], rightStepModels[group]));
 }
 
-function resolveStepGroupModel(settings: AppSettings, group: AiStepGroup): AiModel {
-  return settings.aiStepModels[group] ?? settings.aiModel;
-}
 
 function pickChangedValue<TValue>(
   draftValue: TValue | undefined,

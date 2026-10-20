@@ -34,19 +34,21 @@ JSON bodies are camelCase; datetimes are ISO-8601 in UTC (`...Z`); errors are `{
 | `/prompt-presets` routes (list, create, get, save, delete, default, duplicate, versions, restore, export, import, defaults) | see [business/2-prompt-presets.md](business/2-prompt-presets.md) | 400 · 404 · 409 · 413 · 422 |
 | `/film-clones` routes (create upload / YouTube with captcha, list, detail, delete, localization, write-script, resume, relocalize, asset and scene edits, generate, files) | see [business/5-film-clone.md](business/5-film-clone.md) § API endpoints | 400 · 403 · 404 · 409 · 413 · 422 · 502 |
 | `/films` routes (projects, cast, characters, styles, voices, episodes with captcha on create, stage actions, scenes, thumbnails, downloads, files) | see [business/4-film-studio.md](business/4-film-studio.md) § API endpoints | 400 · 403 · 404 · 409 · 413 · 422 |
-| `GET` / `PATCH /settings` | `{ scriptLanguage, aiModel, aiStepModels, inputMode, filmCloneInputMode, filmCloneImageProvider, filmStudioImageProvider, filmStudioClipProvider }` — [business/6-settings.md](business/6-settings.md) | 400 · 422 |
-| `PATCH /settings/ai-models` (JSON `{ aiModel?, aiStepModels?, inputMode?, routes?, models? }`) | `{ settings, providers }`, saved all or none — see [business/6-settings.md](business/6-settings.md) § API endpoints | 400 · 404 · 422 |
+| `GET` / `PATCH /settings` | `{ scriptLanguage, aiModel, aiStepModels, inputMode, filmAnalysisInputMode, filmCloneInputMode, filmCloneImageProvider, filmStudioImageProvider, filmStudioClipProvider }` — [business/6-settings.md](business/6-settings.md) | 400 · 422 |
+| `PATCH /settings/ai-models` (JSON `{ aiModel?, aiStepModels?, inputMode?, filmAnalysisInputMode?, routes?, models? }`) | `{ settings, providers }`, saved all or none — see [business/6-settings.md](business/6-settings.md) § API endpoints | 400 · 404 · 422 |
 | `/settings/providers` routes (list, provider update, test, Flow resume / open tab) | see [business/7-provider-settings.md](business/7-provider-settings.md) § API endpoints | 400 · 404 · 409 · 422 |
 
 `Job.type` is one of `video_to_markdown`, `youtube_to_markdown`, `film_analysis`, `youtube_film_analysis`,
 `film_analysis_rerun`, `film_clone`, `youtube_film_clone`. `Job.options` holds the per-source input (`language`, `url`, `videoId`, `captionKind?`,
 `maxFrames`, `frameCounts?`, `rerunOfJobId`) plus `preset` and `prompts` copied from a prompt preset and
-`inputMode` copied from Settings — `inputMode`, or `filmCloneInputMode` for the stage 1 job of a film clone
-(not on a rerun). `Job`, `FilmClone` and `Episode` carry `aiUsed`
+`inputMode` copied from Settings — `inputMode` for Video to Markdown, `filmAnalysisInputMode` for Film
+Analysis, `filmCloneInputMode` for the stage 1 job of a film clone (not on a rerun, except a rerun of a
+`full_video` analysis). `Job`, `FilmClone` and `Episode` carry `aiUsed`
 (`{ "{step}": { provider, model, label } }`, the model each AI step started with); `FilmCloneDetail` carries
 `aiActivity` — [business/8-ai-models.md](business/8-ai-models.md). Every route that creates a job, clone or
 episode also answers 409 `{provider name} is not set up — open Settings` when the model of a step group the run
-uses belongs to a provider that is not set up.
+uses belongs to a provider that is not set up, and 409 `{group label} needs a Google AI model — open Settings`
+when a group that needs Google AI (`audio` in `whole_video`, `filmAnalysis` in `full_video`) has another model.
 
 ## Rules
 

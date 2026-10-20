@@ -1,4 +1,4 @@
-import type { InputMode } from "@/features/settings/types";
+import type { FilmAnalysisInputMode } from "@/features/settings/types";
 import type { CaptionKind, FilmAnalysisJobType, JobOutputs, JobStep, JobType, VideoToMarkdownJobType } from "./types";
 
 export const ACCEPTED_VIDEO_EXTENSIONS = [".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"] as const;
@@ -39,7 +39,7 @@ const PROMPT_PASS_STEPS: readonly JobStep[] = [
   "writing_scene_prompts",
 ];
 
-export const JOB_STEPS_BY_INPUT_MODE: Record<InputMode, Record<JobType, readonly JobStep[]>> = {
+export const JOB_STEPS_BY_INPUT_MODE: Record<FilmAnalysisInputMode, Partial<Record<JobType, readonly JobStep[]>>> = {
   subtitles: {
     video_to_markdown: ["extracting_audio", "transcribing", "picking_moments", "capturing_frames", "writing_markdown"],
     youtube_to_markdown: [
@@ -89,6 +89,7 @@ export const JOB_STEPS_BY_INPUT_MODE: Record<InputMode, Record<JobType, readonly
     film_analysis: [
       "extracting_audio",
       "transcribing",
+      "listening_to_audio",
       "sampling_frames",
       "picking_moments",
       "detecting_scenes",
@@ -99,6 +100,7 @@ export const JOB_STEPS_BY_INPUT_MODE: Record<InputMode, Record<JobType, readonly
     youtube_film_analysis: [
       "fetching_transcript",
       "downloading_video",
+      "listening_to_audio",
       "sampling_frames",
       "picking_moments",
       "detecting_scenes",
@@ -108,14 +110,21 @@ export const JOB_STEPS_BY_INPUT_MODE: Record<InputMode, Record<JobType, readonly
     ],
     film_analysis_rerun: PROMPT_PASS_STEPS,
   },
+  full_video: {
+    film_analysis: ["compressing_video", ...PROMPT_PASS_STEPS],
+    youtube_film_analysis: ["downloading_video", "compressing_video", ...PROMPT_PASS_STEPS],
+    film_analysis_rerun: PROMPT_PASS_STEPS,
+  },
 };
 
 export const JOB_STEP_LABELS: Record<JobStep, string> = {
   extracting_audio: "Extracting audio",
   transcribing: "Transcribing speech",
   fetching_transcript: "Fetching YouTube transcript",
+  listening_to_audio: "Listening to the audio",
   picking_moments: "Picking key moments",
   downloading_video: "Downloading video",
+  compressing_video: "Compressing video",
   sampling_frames: "Sampling frames",
   detecting_scenes: "Detecting scene changes",
   capturing_frames: "Capturing frames",

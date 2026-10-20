@@ -10,10 +10,15 @@ from app.modules.providers.provider_catalog import ProviderId
 class InputMode(StrEnum):
     SUBTITLES = "subtitles"
     WHOLE_VIDEO = "whole_video"
+    FULL_VIDEO = "full_video"
+
+
+MOMENT_INPUT_MODES = (InputMode.SUBTITLES, InputMode.WHOLE_VIDEO)
 
 
 class AiStepGroup(StrEnum):
     MOMENTS = "moments"
+    AUDIO = "audio"
     FILM_ANALYSIS = "filmAnalysis"
     FILM_SCRIPT = "filmScript"
     FILM_CLONE = "filmClone"
@@ -32,11 +37,19 @@ class AttachedImage:
 
 
 @dataclass(frozen=True)
+class AttachedMedia:
+    label: str
+    path: Path
+    mime_type: str
+
+
+@dataclass(frozen=True)
 class AiAsk:
     instructions: str
     message: str
     images: Sequence[AttachedImage] = ()
     reply_schema: Mapping[str, Any] | None = None
+    media: Sequence[AttachedMedia] = ()
 
 
 def do_nothing() -> None:
@@ -57,3 +70,8 @@ class AiCallError(Exception):
 class AiProviderNotSetUpError(AiCallError):
     def __init__(self, provider_name: str):
         super().__init__(f"{provider_name} is not set up — open Settings")
+
+
+class GoogleModelRequiredError(AiCallError):
+    def __init__(self, group_label: str):
+        super().__init__(f"{group_label} needs a Google AI model — open Settings")

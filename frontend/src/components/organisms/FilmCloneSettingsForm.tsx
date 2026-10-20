@@ -9,15 +9,16 @@ import { IMAGE_ROUTE_PROVIDER_IDS } from "@/features/providers/constants";
 import { useProviderSettingsQuery } from "@/features/providers/queries";
 import {
   FILM_CLONE_IMAGE_PROVIDER_HINT,
+  FILM_CLONE_INPUT_MODE_HINT,
+  FILM_CLONE_INPUT_MODE_LABELS,
   FILM_CLONE_SETTINGS_FORM_KEY,
-  INPUT_MODE_HINT,
-  INPUT_MODE_LABELS,
   ROUTES_BY_MEDIA_PROVIDER_SETTING,
 } from "@/features/settings/constants";
 import type { InputMode } from "@/features/settings/types";
+import { buildGoogleAiModelWarning, resolveStepGroupModel } from "@/features/settings/utils";
 import { AppSettingsForm } from "./AppSettingsForm";
 
-const INPUT_MODE_OPTIONS = labelsToSelectOptions(INPUT_MODE_LABELS);
+const FILM_CLONE_INPUT_MODE_OPTIONS = labelsToSelectOptions(FILM_CLONE_INPUT_MODE_LABELS);
 
 interface FilmCloneSettingsFormProps {
   onUnsavedChangesChange: (formKey: string, hasUnsavedChanges: boolean) => void;
@@ -34,28 +35,33 @@ export function FilmCloneSettingsForm({ onUnsavedChangesChange }: FilmCloneSetti
       title="Film Clone"
       formKey={FILM_CLONE_SETTINGS_FORM_KEY}
       onUnsavedChangesChange={onUnsavedChangesChange}
-      renderFields={({ shownSettings, isDisabled, onChange }) => (
-        <>
-          <MediaProviderSelectField
-            label="Images with"
-            hint={FILM_CLONE_IMAGE_PROVIDER_HINT}
-            route={ROUTES_BY_MEDIA_PROVIDER_SETTING.filmCloneImageProvider}
-            value={shownSettings.filmCloneImageProvider}
-            providerIds={IMAGE_ROUTE_PROVIDER_IDS}
-            providerSettings={providerSettings}
-            isDisabled={isDisabled}
-            onChange={(filmCloneImageProvider) => onChange({ filmCloneImageProvider })}
-          />
-          <SelectField<InputMode>
-            label="Input mode"
-            value={shownSettings.filmCloneInputMode}
-            options={INPUT_MODE_OPTIONS}
-            hint={INPUT_MODE_HINT}
-            isDisabled={isDisabled}
-            onChange={(filmCloneInputMode) => onChange({ filmCloneInputMode })}
-          />
-        </>
-      )}
+      renderFields={({ shownSettings, isDisabled, onChange }) => {
+        const audioModel = resolveStepGroupModel(shownSettings, "audio");
+        const audioModelWarning = buildGoogleAiModelWarning("audio", audioModel, [shownSettings.filmCloneInputMode]);
+        return (
+          <>
+            <MediaProviderSelectField
+              label="Images with"
+              hint={FILM_CLONE_IMAGE_PROVIDER_HINT}
+              route={ROUTES_BY_MEDIA_PROVIDER_SETTING.filmCloneImageProvider}
+              value={shownSettings.filmCloneImageProvider}
+              providerIds={IMAGE_ROUTE_PROVIDER_IDS}
+              providerSettings={providerSettings}
+              isDisabled={isDisabled}
+              onChange={(filmCloneImageProvider) => onChange({ filmCloneImageProvider })}
+            />
+            <SelectField<InputMode>
+              label="Input mode"
+              value={shownSettings.filmCloneInputMode}
+              options={FILM_CLONE_INPUT_MODE_OPTIONS}
+              hint={FILM_CLONE_INPUT_MODE_HINT}
+              isDisabled={isDisabled}
+              onChange={(filmCloneInputMode) => onChange({ filmCloneInputMode })}
+            />
+            {audioModelWarning && <ErrorAlert>{audioModelWarning}</ErrorAlert>}
+          </>
+        );
+      }}
     />
   );
 }

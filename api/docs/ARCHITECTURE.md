@@ -66,7 +66,7 @@ lifespan stop ─▶ worker.stop() ─▶ CommandRunner.terminate_all() ─▶ j
 | --- | --- | --- |
 | `fetching_transcript` | `YtDlpDownloader.read_video_info` → `select_caption_track` → `download_captions` → `json3_to_transcript`; `captionKind` saved to `options` | `work/captions.<code>.json3` → `Transcript` |
 | `picking_moments` | `MomentPickingSteps.pick` (shared with `video_to_markdown`) | `VideoOutline` |
-| `downloading_video` | `YtDlpDownloader.download_video` — video stream only, ≤ `YOUTUBE_VIDEO_HEIGHT`; in `whole_video` it runs before `sampling_frames` and `picking_moments`, once | `source.mp4` |
+| `downloading_video` | `YtDlpDownloader.download_video` — video stream only, ≤ `YOUTUBE_VIDEO_HEIGHT`; `download_video_with_audio` for Film Analysis and Film Clone in `whole_video` and Film Analysis in `full_video`; in `whole_video` it runs before `listening_to_audio`, `sampling_frames` and `picking_moments`, once | `source.mp4` |
 | `capturing_frames` | `MomentFrameCapturer.capture` (shared) | `output/images/…` |
 | `writing_markdown` | `build_markdown_with_moment_links` + `JobStorage.save_result` | `output/<name>.md`, `result.zip` |
 
@@ -79,20 +79,22 @@ sorts, caps at `MAX_MOMENTS`. Transcript segments go under the last moment that 
 ## AI models
 
 `app/modules/ai_models/` holds every AI call (domain 8). A call site asks `AiCaller` with an `AiAsk`
-(instructions, message, labelled images, optional reply schema) and `AiLimits` (total timeout, optional silence
+(instructions, message, labelled images, labelled audio / video files (`AttachedMedia`), optional reply schema) and `AiLimits` (total timeout, optional silence
 limit, `on_output`); `AiCaller.ask_for_json` / `ask_for_text` dispatch on the provider of an `AiModelChoice`:
 
 | Provider | Client | Transport |
 | --- | --- | --- |
 | `claude_cli` | `ClaudeCliClient` | `claude -p --output-format stream-json` through `CommandRunner` (`run_watched` when a silence limit is set), `--json-schema` for replies with a schema, `--model` unless `default` |
-| `google` | `GeminiClient` | `streamGenerateContent?alt=sse` over httpx, `x-goog-api-key`; a body over 20 MB is never sent |
+| `google` | `GeminiClient` | `streamGenerateContent?alt=sse` over httpx, `x-goog-api-key`; a body over 20 MB is never sent; each `AttachedMedia` goes through `GeminiFiles` (`gemini_files.py`: resumable upload, poll until `ACTIVE`, `fileData` part, delete after the call), video calls send `mediaResolution` LOW |
 | `openai` | `OpenAiClient` | `POST /v1/responses` with `stream: true`, `store: false`, the schema as `text.format` |
 
 `streamed_answers.py` holds the SSE reading both API clients share (timeouts, error bodies, key redacted with
 `redact_secret`); `ai_images.py` scales every image to `AI_IMAGE_MAX_SIDE_PX` and re-encodes it as JPEG
-(`AI_IMAGE_JPEG_QUALITY`). `AiStepModels` reads the model of a step group (`moments`, `filmAnalysis`,
+(`AI_IMAGE_JPEG_QUALITY`). `AiStepModels` reads the model of a step group (`moments`, `audio`, `filmAnalysis`,
 `filmScript`, `filmClone`) from Settings when each call starts — the group's own model, else `aiModel` — and
-raises `AiProviderNotSetUpError` (409 at creation, a failed step during a run). Each AI step records the model it
+raises `AiProviderNotSetUpError` (409 at creation, a failed step during a run); `find_google_model` raises
+`GoogleModelRequiredError` the same way for a group that needs Google AI (`audio` in `whole_video`,
+`filmAnalysis` in `full_video`). Each AI step records the model it
 started with in `ai_used` (`jobs`, `film_clones`, `film_episodes`). `whole_video` splits the samples into
 windows of `CLAUDE_MAX_IMAGES_PER_CALL` / `GEMINI_MAX_IMAGES_PER_CALL` / `OPENAI_MAX_IMAGES_PER_CALL`, picked by
 the provider (`moment_windows.py`). Rules: [../../docs/business/8-ai-models.md](../../docs/business/8-ai-models.md).
@@ -100,16 +102,22 @@ the provider (`moment_windows.py`). Rules: [../../docs/business/8-ai-models.md](
 ## Film analysis pipelines
 
 `film_analysis` / `youtube_film_analysis` run the shared steps above with `max_frames ÷ 2` dialogue
-moments, then:
+moments — in `whole_video` with `listening_to_audio` (`AudioListener` → `normalize_audio_replies`, audio parts
+of `AI_MEDIA_PART_SEC`, `audio-notes.json`) before `sampling_frames` — then:
 
 | Step (`JobStep`) | Code | Output |
 | --- | --- | --- |
 | `detecting_scenes` | `FfmpegSceneDetector` (`select=gt(scene,…)` + `metadata=print:file=-`) | cut times |
-| `capturing_frames` | `merge_dialogue_and_scene_frames` → `MomentFrameCapturer` | `output/images/…`, `options.frameCounts` |
-| `writing_markdown` | `build_markdown[_with_moment_links]` → `job_outputs.video_notes` | no `.md`, no zip |
+| `capturing_frames` | `merge_film_frames` (dialogue → sound → scene) → `MomentFrameCapturer` | `output/images/…`, `options.frameCounts` |
+| `writing_markdown` | `build_markdown[_with_moment_links]` (with `SpeakerVoices` in `whole_video`) → `job_outputs.video_notes` | no `.md`, no zip |
 | `writing_character_image_prompts` / `…_voice_…` / `writing_scene_prompts` | `FilmPromptPasses` → `AiCaller.ask_for_text` with the `filmAnalysis` model | `job_outputs` rows |
 
-`film_analysis_rerun` copies `video_notes` + `images/` at creation and runs only the three prompt steps.
+`full_video` skips all of the above: `compressing_video` (`VideoCompressor` → `FfmpegMediaProcessor.compress_video`,
+`compressed/part-NN.mp4`), then `FullVideoPromptPasses` send the parts to the `filmAnalysis` model, one call per
+part (`FullVideoSteps.run_from_video` / `run_from_compressed`).
+
+`film_analysis_rerun` copies `video_notes` + `images/` at creation — `compressed/` for a `full_video` source —
+and runs only the three prompt steps.
 Rules: [../../docs/business/3-film-analysis.md](../../docs/business/3-film-analysis.md).
 
 ## Film clone pipeline
@@ -240,6 +248,7 @@ raising on a non-zero exit.
 | --- | --- | --- |
 | `ffmpeg`, `ffprobe` | `FFMPEG_BIN`, `FFPROBE_BIN` | `MEDIA_TIMEOUT_SEC` |
 | `whisper-cli` | `WHISPER_BIN`, `WHISPER_MODEL_PATH` | `WHISPER_TIMEOUT_SEC` |
+| `ffmpeg` audio parts / video compression | `FFMPEG_BIN`, `AI_MEDIA_PART_SEC`, `FULL_VIDEO_MAX_SIDE_PX`, `FULL_VIDEO_MAX_FPS` | `MEDIA_TIMEOUT_SEC`; each Gemini call with a part `AI_AUDIO_TIMEOUT_SEC` (audio) or `FILM_PROMPT_TIMEOUT_SEC` (video), the upload included |
 | `claude` (provider `claude_cli`; the model comes from Settings) | `CLAUDE_BIN` | `AI_MOMENTS_TIMEOUT_SEC` (moments), `FILM_PROMPT_TIMEOUT_SEC` (prompt passes), `FILM_SCRIPT_TIMEOUT_SEC` (each outline, part and story bible call), `CLONE_AI_SILENCE_SEC` (film clone, without output) + `CLONE_AI_MAX_RUN_SEC` (film clone, in all); `PROVIDER_TEST_TIMEOUT_SEC` for `claude auth status --json` |
 | `ffmpeg` scene detection | `FFMPEG_BIN`, `FILM_SCENE_THRESHOLD` | `FILM_SCENE_TIMEOUT_SEC` |
 | `yt-dlp` (dependency in `pyproject.toml`, runs with `--js-runtimes node`) | `YTDLP_BIN` | `YOUTUBE_TIMEOUT_SEC` in the worker; 30 s on the create request |

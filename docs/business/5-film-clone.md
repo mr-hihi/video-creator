@@ -23,8 +23,9 @@ A finished clone can be sent to Film Studio as an episode (4.2, source `film_clo
   `film_clone` or `youtube_film_clone`, stage 2 in the batch worker after it; images are `GenerationRequest`s of Film Studio (4.3).
 - Prompts: `videoToMarkdown`, `cloneAssets`, `cloneShots`, `cloneLocalization`, `cloneScript` of a prompt
   preset (domain 2), copied at creation (2.5).
-- AI models: those of the `moments` (stage 1) and `filmClone` (stages 2–4) step groups, read when each call
-  starts (domain 8). Input mode: the `filmCloneInputMode` setting, copied into the stage 1 job at creation.
+- AI models: those of the `moments` and, in `whole_video`, `audio` (stage 1) and `filmClone` (stages 2–4)
+  step groups, read when each call starts (domain 8). Input mode: the `filmCloneInputMode` setting, copied
+  into the stage 1 job at creation.
 - Script language: the `Script language` setting of Settings (domain 6) and the target country (5.3).
 - External tools: as domain 3, plus the image providers of Film Studio (4 § Media providers).
 
@@ -62,7 +63,7 @@ The screens show the job's `source_filename`.
 | `language`, `url`, `videoId`, `captionKind` | as 1.2 / 1.3 |
 | `maxFrames` | integer 10–1000, default 1000 |
 | `frameCounts` | as 3.1 |
-| `preset`, `prompts` | 2.5 — `prompts` = `videoToMarkdown`, `cloneAssets`, `cloneShots` |
+| `preset`, `prompts` | 2.5 — `prompts` = `videoToMarkdown`, `speakersAndSounds`, `cloneAssets`, `cloneShots` |
 | `inputMode` | copied from `filmCloneInputMode` (6.1, 8.1) |
 | `cloneId` | the clone `id` |
 
@@ -79,8 +80,10 @@ The screens show the job's `source_filename`.
 
 - Steps 1–6 behave as in Film Analysis (3.1–3.2), failures included: dialogue frames + scene cuts, the
   `video_notes` row in `job_outputs`, frames in `storage/{job-id}/output/images/`.
-- `inputMode` = `whole_video` adds `sampling_frames` right before `picking_moments`, and YouTube downloads
-  before both (8.3).
+- `inputMode` = `whole_video` (screen label `Frame image + audio`) adds `listening_to_audio` and
+  `sampling_frames`, in that order, right before `picking_moments`, and YouTube downloads, with the audio,
+  before them (8.3): the video notes name the speakers, and sound frames join the dialogue frames and scene
+  cuts (3.2).
 - Worker, single queue and requeue on restart: as 1.1. A requeued job runs from its first step and
   replaces its `video_notes` row, assets and shots.
 - Job `done` → one shot per frame saved with empty values (5.2), `aspect` set, clone `running` at
@@ -203,7 +206,7 @@ waits by itself:
 | `position` | int | 0, 1, 2 … in time order |
 | `at_ms` | int | time of the frame |
 | `frame` | string | `images/moment-…jpg` |
-| `frame_kind` | enum | `dialogue` \| `scene` — from the merge of 3.2 |
+| `frame_kind` | enum | `dialogue` \| `sound` \| `scene` — from the merge of 3.2 |
 | `shot_size` | enum \| null | `extreme_wide` \| `wide` \| `full` \| `medium` \| `medium_close` \| `close_up` \| `extreme_close_up` |
 | `camera_angle` | enum \| null | `eye_level` \| `high` \| `low` \| `birds_eye` \| `worms_eye` \| `dutch` \| `over_the_shoulder` \| `pov` |
 | `emotion` | string(200) \| null | the characters' emotion, free text |
@@ -445,7 +448,7 @@ its `detail` and keeps what the user typed.
 
 **Panel "New clone"** — as the `New analysis` panel of 3.6, with:
 
-- `Max frames` 10–1000, default 1000, hint `One scene per frame in the script.`
+- `Max frames` 10–1000, default 1000, hint `One scene per frame in the script.`, always shown.
 - Checkbox `Run every step automatically`, unticked, hint `Skips the localization choices and the review,
   using the choices below.` Ticked → below it `Target country`, `Target setting` and `Appearance` /
   `Costume` / `Setting`, as the `Localization` tab at `choosing_localization` (without the script language
@@ -482,7 +485,7 @@ its `detail` and keeps what the user typed.
 |---|---|
 | `Video notes` | as the `Video notes` tab of 3.6, with `Copy` |
 | `Assets` | groups `Characters`, `Costumes`, `Props`, `Locations`; card: reference frame, name, culture, period, description, `{n} frames`. At `choosing_localization`: `Edit` (form of 5.2) and `Delete` (confirm `Delete asset '{name}'?`). A changed asset shows `Original` and `Localized` side by side |
-| `Shots` | one row per shot in time order: frame (click to enlarge), timestamp (YouTube: link to that second), badge `Dialogue` / `Scene change`, shot size, camera angle, emotion, action, asset chips; filters `Shot size` and `Camera angle` |
+| `Shots` | one row per shot in time order: frame (click to enlarge), timestamp (YouTube: link to that second), badge `Dialogue` / `Sound` / `Scene change`, shot size, camera angle, emotion, action, asset chips; filters `Shot size` and `Camera angle` |
 | `Localization` | below |
 | `Script` | below |
 
@@ -583,8 +586,8 @@ GET    /film-clones/files/{path}                   — one file under storage/fi
   `false`), as in `POST …/localization`.
 - Creation runs every check of 1.2 (upload) or 1.3 (YouTube) in its order, then `maxFrames` is an integer
   10–1000 → 400 `Max frames must be between 10 and 1000`, then with `shouldRunAutomatically` rules 2–3 of 5.3
-  (400), and `presetId` as 2.5. The AI provider check covers the `moments`
-  and `filmClone` models (8.1). The job and the clone are created together.
+  (400), and `presetId` as 2.5. The AI provider check covers the `moments` and `filmClone` models, and in
+  `whole_video` the `audio` model, which must be Google AI (8.1). The job and the clone are created together.
 - Frames are served by `GET /jobs/{job id}/files/{path}` once the `video_notes` row exists, as for Film
   Analysis (3).
 - `FilmClone`: the fields of 5.1 in camelCase, plus `sourceFilename`, `sourceKind` (`upload` \| `youtube`),
@@ -596,8 +599,8 @@ GET    /film-clones/files/{path}                   — one file under storage/fi
 
 | Route | Errors |
 |---|---|
-| `POST /film-clones` | as `POST /jobs/video-to-markdown` + 400 max frames / country / flag without country · 422 |
-| `POST /film-clones/youtube` | as `POST /jobs/youtube-to-markdown` + 400 max frames / country / flag without country · 422 |
+| `POST /film-clones` | as `POST /jobs/video-to-markdown` + 400 max frames / country / flag without country · 409 needs Google AI · 422 |
+| `POST /film-clones/youtube` | as `POST /jobs/youtube-to-markdown` + 400 max frames / country / flag without country · 409 needs Google AI · 422 |
 | `DELETE /film-clones/{id}` | 404 · 409 still running |
 | `POST …/localization` | 400 country / flag without country · 404 · 409 step · 422 |
 | `POST …/write-script`, `resume`, `relocalize` | 404 · 409 step / references missing / generation running |

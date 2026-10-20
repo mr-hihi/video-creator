@@ -14,18 +14,23 @@ from app.modules.prompt_presets.preset_files import (
 from app.modules.prompt_presets.preset_rules import build_unique_preset_name
 from app.modules.prompt_presets.prompt_texts import (
     DEFAULT_PRESET_PROMPTS,
+    AudioPartRequestText,
     CloneLocalizationRequestText,
     CloneScriptRequestText,
     FilmOutlineRequestText,
     FilmScriptAnalysis,
     FilmScriptRequestText,
+    FullVideoRequestText,
     StoryBibleRequestText,
     StoryContextText,
+    build_audio_part_message,
     build_clone_localization_message,
     build_clone_script_message,
     build_clone_shots_message,
     build_film_outline_message,
+    build_film_part_line,
     build_film_script_message,
+    build_full_video_message,
     build_moment_request_message,
     build_story_bible_message,
     build_video_notes_message,
@@ -49,6 +54,7 @@ THIRD_FORMAT_PROMPTS = {
     "cloneLocalization": "L",
     "cloneScript": "R",
 }
+FOURTH_FORMAT_PROMPTS = {key: "X" for key in VALID_PAYLOAD["prompts"] if key != "speakersAndSounds"}
 OLD_FILE_BASE = {"format": "video-tool-prompt-preset", "name": "Old export"}
 ANALYSIS = FilmScriptAnalysis(
     character_image_prompts="## Mai",
@@ -121,7 +127,8 @@ def round_trip_draft():
     params=[
         [],
         {**VALID_PAYLOAD, "format": "something-else"},
-        {**VALID_PAYLOAD, "formatVersion": 5},
+        {**VALID_PAYLOAD, "formatVersion": 6},
+        {**OLD_FILE_BASE, "formatVersion": 5, "prompts": FOURTH_FORMAT_PROMPTS},
         {**VALID_PAYLOAD, "name": 7},
         {**VALID_PAYLOAD, "prompts": "all of them"},
         {**VALID_PAYLOAD, "prompts": {**VALID_PAYLOAD["prompts"], "scene": None}},
@@ -156,6 +163,12 @@ def second_format_draft():
 @pytest.fixture
 def third_format_draft():
     payload = {**OLD_FILE_BASE, "formatVersion": 3, "prompts": THIRD_FORMAT_PROMPTS}
+    return export_json_to_preset_draft(json.dumps(payload).encode("utf-8"))
+
+
+@pytest.fixture
+def fourth_format_draft():
+    payload = {**OLD_FILE_BASE, "formatVersion": 4, "prompts": FOURTH_FORMAT_PROMPTS}
     return export_json_to_preset_draft(json.dumps(payload).encode("utf-8"))
 
 
@@ -255,7 +268,7 @@ def test_export_json_round_trips_name_and_prompts(round_trip_draft):
 def test_export_json_carries_format_and_camel_case_prompt_keys():
     assert (VALID_PAYLOAD["format"], VALID_PAYLOAD["formatVersion"]) == (
         "video-tool-prompt-preset",
-        4,
+        5,
     )
     assert sorted(VALID_PAYLOAD["prompts"]) == [
         "characterImage",
@@ -267,6 +280,7 @@ def test_export_json_carries_format_and_camel_case_prompt_keys():
         "filmOutline",
         "filmScript",
         "scene",
+        "speakersAndSounds",
         "storyBible",
         "videoToMarkdown",
     ]
@@ -305,6 +319,28 @@ def test_third_format_file_gets_code_defaults_for_outline_and_story_bible(third_
         clone_shots="H",
         clone_localization="L",
         clone_script="R",
+    )
+
+
+def test_fourth_format_file_gets_the_code_default_for_speakers_and_sounds(fourth_format_draft):
+    assert fourth_format_draft.prompts == replace(
+        DEFAULT_PRESET_PROMPTS,
+        **{
+            field_name: "X"
+            for field_name in (
+                "video_to_markdown",
+                "character_image",
+                "character_voice",
+                "scene",
+                "film_outline",
+                "film_script",
+                "story_bible",
+                "clone_assets",
+                "clone_shots",
+                "clone_localization",
+                "clone_script",
+            )
+        },
     )
 
 
@@ -350,9 +386,22 @@ def test_describe_app_added_parts_shows_placeholders(app_added_parts):
     assert "This part of the video runs from {start} to {end}" in (
         app_added_parts.video_to_markdown
     )
+    assert app_added_parts.speakers_and_sounds.startswith(
+        "Reply shape (JSON schema, fixed): speakers[] { name, voice }, lines[] { atMs, speaker }, "
+        "sounds[] { atMs, kind: action | silence | ambient | music, description }"
+    )
+    assert "Speakers so far:" in app_added_parts.speakers_and_sounds
+    assert "Use the same name for the same voice." in app_added_parts.speakers_and_sounds
+    assert "Transcript:" in app_added_parts.speakers_and_sounds
+    assert "[audio {start}–{end}]" in app_added_parts.speakers_and_sounds
     assert "Characters:" not in app_added_parts.character_image
+    assert "Your answer for the earlier parts:" in app_added_parts.character_image
     assert "Characters:" in app_added_parts.character_voice
-    assert app_added_parts.scene == app_added_parts.character_voice
+    assert "The film is attached as video." in app_added_parts.character_voice
+    assert "Your answer for the earlier parts:" in app_added_parts.character_voice
+    assert "Characters:" in app_added_parts.scene
+    assert "Your answer for the earlier parts:" not in app_added_parts.scene
+    assert "[video {start}–{end}]" in app_added_parts.scene
     assert "add up to about {target_duration_s}s" in app_added_parts.film_script
     assert "a typical clip lasts {clip}s" in app_added_parts.film_script
     assert "Write part {k} now." in app_added_parts.film_script
@@ -542,3 +591,53 @@ def clone_setting_line(request):
 
 def test_clone_script_message_names_the_country_and_the_target_setting(clone_setting_line):
     assert clone_setting_line.actual == clone_setting_line.expected
+
+
+def test_audio_part_message_of_the_first_part_has_no_speakers():
+    assert build_audio_part_message(
+        AudioPartRequestText(
+            start="00:00", end="30:00", speaker_lines=[], transcript_lines="[10000ms] Chào anh."
+        )
+    ) == ("This part of the film runs from 00:00 to 30:00.\n\nTranscript:\n[10000ms] Chào anh.")
+
+
+def test_audio_part_message_lists_the_speakers_so_far():
+    assert build_audio_part_message(
+        AudioPartRequestText(
+            start="30:00",
+            end="1:00:00",
+            speaker_lines=["- Mai — young woman, soft voice", "- Long"],
+            transcript_lines="",
+        )
+    ) == (
+        "This part of the film runs from 30:00 to 1:00:00.\n\n"
+        "Speakers so far:\n- Mai — young woman, soft voice\n- Long\n"
+        "Use the same name for the same voice.\n\n"
+        "Transcript:\n(no speech in this part)"
+    )
+
+
+def test_full_video_message_of_a_single_part_film_in_auto_language():
+    assert build_full_video_message(
+        FullVideoRequestText(
+            language_name=None, part_line=None, character_prompts=None, earlier_answer=None
+        )
+    ) == ("The film is attached as video.")
+
+
+def test_full_video_message_of_a_later_part_carries_the_earlier_answer():
+    assert build_full_video_message(
+        FullVideoRequestText(
+            language_name="Vietnamese",
+            part_line=build_film_part_line("30:00", "1:00:00", "2", "3"),
+            character_prompts="## A",
+            earlier_answer="V1",
+        )
+    ) == (
+        "The film is attached as video.\nSpoken language: Vietnamese\n\n"
+        "This part of the film runs from 30:00 to 1:00:00 (part 2 of 3).\n\n"
+        "Characters:\n\n## A\n\n"
+        "Your answer for the earlier parts:\n\nV1\n\n"
+        "Answer again for the whole film so far: keep every entry, update it with this part and "
+        "add the new ones."
+    )

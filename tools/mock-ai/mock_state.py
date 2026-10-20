@@ -7,7 +7,7 @@ import os
 import struct
 import tempfile
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -23,6 +23,9 @@ TEXT_PREVIEW_CHARS = 300
 PROMPT_AIS = frozenset({"claude", "gemini", "openai"})
 CLAUDE_AUTH_AI = "claude-auth"
 WHISPER_AI = "whisper"
+GEMINI_AI = "gemini"
+GEMINI_FILES_AI = "gemini-files"
+UPLOAD_RULE_KEY = "upload"
 JPEG_START_OF_FRAME_MARKERS = frozenset(
     {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF}
 )
@@ -36,6 +39,14 @@ class SentImage:
 
 
 @dataclass(frozen=True)
+class SentMedia:
+    label: str
+    mime_type: str
+    file_uri: str
+    video_metadata: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
 class AskView:
     ai: str
     model: str
@@ -43,6 +54,7 @@ class AskView:
     message: str
     images: list[SentImage] = field(default_factory=list)
     reply_schema: dict[str, Any] | None = None
+    media: list[SentMedia] = field(default_factory=list)
 
     @property
     def image_labels(self) -> list[str]:
@@ -72,13 +84,27 @@ def record_call(state_dir: Path, entry: dict[str, Any]) -> None:
 
 
 def take_scenario_rule(state_dir: Path, ai: str, text: str) -> dict[str, Any] | None:
+    return take_first_rule(
+        state_dir, lambda rule: UPLOAD_RULE_KEY not in rule and is_rule_for(rule, ai, text)
+    )
+
+
+def take_upload_rule(state_dir: Path, text: str) -> dict[str, Any] | None:
+    return take_first_rule(
+        state_dir, lambda rule: UPLOAD_RULE_KEY in rule and is_rule_for(rule, GEMINI_AI, text)
+    )
+
+
+def take_first_rule(
+    state_dir: Path, is_wanted: Callable[[dict[str, Any]], bool]
+) -> dict[str, Any] | None:
     with lock_state(state_dir):
         rules = read_json(state_dir / SCENARIO_FILE_NAME, [])
         uses = read_json(state_dir / SCENARIO_USES_FILE_NAME, {})
         for index, rule in enumerate(rules):
             used_count = uses.get(str(index), 0)
             is_used_up = rule.get("times") is not None and used_count >= rule["times"]
-            if is_used_up or not is_rule_for(rule, ai, text):
+            if is_used_up or not is_wanted(rule):
                 continue
             uses[str(index)] = used_count + 1
             (state_dir / SCENARIO_USES_FILE_NAME).write_text(json.dumps(uses))

@@ -24,8 +24,8 @@ Test cases for [business/2-prompt-presets.md](../business/2-prompt-presets.md). 
   7. Expand `Added by the app` under `Story bible`
 - **Expected:**
   - `Presets` lists one row `Default` with badges `Default preset` and `System` and `v1`; it is selected
-  - Editor: `Name` = `Default` and disabled; eleven sections in the order `Video → Markdown`, `Character image prompts`, `Character voice prompts`, `Scene prompts`, `Film outline`, `Film script`, `Story bible`, `Clone assets`, `Clone shots`, `Clone localization`, `Clone script`, each with badge `Default` and a counter `{n} / 20000`
-  - `Video → Markdown` shows `Used by` Video to Markdown, Film Analysis and Film Clone; the next three show Film Analysis; `Film outline`, `Film script` and `Story bible` show Film Studio; the four clone sections show Film Clone
+  - Editor: `Name` = `Default` and disabled; twelve sections in the order `Video → Markdown`, `Speakers & sounds`, `Character image prompts`, `Character voice prompts`, `Scene prompts`, `Film outline`, `Film script`, `Story bible`, `Clone assets`, `Clone shots`, `Clone localization`, `Clone script`, each with badge `Default` and a counter `{n} / 20000`
+  - `Video → Markdown` shows `Used by` Video to Markdown, Film Analysis and Film Clone; `Speakers & sounds` shows Film Analysis and Film Clone; the next three show Film Analysis; `Film outline`, `Film script` and `Story bible` show Film Studio; the four clone sections show Film Clone
   - No `Delete` and no `Set as default` button; `Save` is disabled
   - Step 2 shows the output shape `title`, `summary`, `moments[] { atMs, title }`, the line `Choose at most {N} key moments. Set atMs to the start time of the line where the moment begins.` and the transcript format `[{start_ms}ms] {text}`; below them the heading `Whole video mode — one message per part of the video, its frames attached at one per second:`, the line `This part of the video runs from {start} to {end}. Choose at most {m} key moments in it. Set atMs to the time of the frame or the line where the moment begins.`, `Transcript:` and `Frames:`
   - Step 3 shows the `Video notes:` heading, the `Characters:` heading and the line `The frames referenced in the notes are attached below as images, each after its file name. Look at them to see the characters and scenes.`
@@ -93,7 +93,7 @@ Test cases for [business/2-prompt-presets.md](../business/2-prompt-presets.md). 
 
 ### TC-PP-05: Name and prompt validation
 - **App:** API
-- **Precondition:** TC-PP-02 has run; `{body}` = the eleven prompts of `GET P/{Default id}`.
+- **Precondition:** TC-PP-02 has run; `{body}` = the twelve prompts of `GET P/{Default id}`.
 - **Steps:**
   1. `curl -i -X POST P -H 'Content-Type: application/json' -d '{"name":"   "}'`
   2. `POST P` with a `name` of 51 `a` characters
@@ -140,8 +140,8 @@ Test cases for [business/2-prompt-presets.md](../business/2-prompt-presets.md). 
 - **Expected:**
   - Step 1: notice `Saved as v3`
   - Step 2: rows `v3` (`Saved`, tagged `Current`), `v2` (`Saved`), `v1` (`Created`), newest first
-  - Step 3: the eleven prompts of v1 shown read-only — all equal `{default text}`
-  - Step 4: notice `Restored v1 as v4`; new top row `v4` · `Restored from v1` tagged `Current`; the editor shows the default text in all eleven sections, every badge `Default`; the row shows `v4`
+  - Step 3: the twelve prompts of v1 shown read-only — all equal `{default text}`
+  - Step 4: notice `Restored v1 as v4`; new top row `v4` · `Restored from v1` tagged `Current`; the editor shows the default text in all twelve sections, every badge `Default`; the row shows `v4`
 
 ### TC-PP-08: Only the 20 newest versions are kept
 - **App:** API
@@ -224,7 +224,7 @@ Test cases for [business/2-prompt-presets.md](../business/2-prompt-presets.md). 
   5. Import the same file again
 - **Expected:**
   - Step 1: download `Uppercase titles.preset.json`
-  - Step 2: `format` = `video-tool-prompt-preset`, `formatVersion` = 4, `name` = `Uppercase titles`, `prompts` with the eleven keys equal to the editor; no version or default field
+  - Step 2: `format` = `video-tool-prompt-preset`, `formatVersion` = 5, `name` = `Uppercase titles`, `prompts` with the twelve keys equal to the editor; no version or default field
   - Step 3: notice `Imported as 'Uppercase titles (imported)'`; that row is selected, `v1`
   - Step 4: one row `v1` · `Imported from Uppercase titles.preset.json`
   - Step 5: `Uppercase titles (imported 2)`
@@ -233,7 +233,7 @@ Test cases for [business/2-prompt-presets.md](../business/2-prompt-presets.md). 
 - **App:** API
 - **Steps:** `curl -i -X POST P/import -F 'file=@{file}'` with:
   1. `bad.json` = `{"foo":1}`
-  2. a valid export with `"formatVersion": 5`
+  2. a valid export with `"formatVersion": 6`
   3. a valid export with `"characterVoice": ""`
   4. `notes.txt` with the text `hello`
   5. a valid export padded to 1.1 MB
@@ -266,10 +266,25 @@ Test cases for [business/2-prompt-presets.md](../business/2-prompt-presets.md). 
   3. A `formatVersion` 3 file with the five keys above plus the four clone prompts `A`, `B`, `L`, `T`
   4. A `formatVersion` 4 file with the nine keys of step 3 plus `filmOutline` and no `storyBible`
 - **Expected:**
-  1. `HTTP 201`, `prompts.filmScript` = `F`; `filmOutline`, `storyBible`, `cloneAssets`, `cloneShots`, `cloneLocalization`, `cloneScript` = their `{default text}`
+  1. `HTTP 201`, `prompts.filmScript` = `F`; `filmOutline`, `storyBible`, `speakersAndSounds`, `cloneAssets`, `cloneShots`, `cloneLocalization`, `cloneScript` = their `{default text}`
   2. `HTTP 400`, `detail` = `Not a prompt preset file`
-  3. `HTTP 201`, `prompts.filmScript` = `F`, `prompts.cloneScript` = `T`; `filmOutline` and `storyBible` = their `{default text}`
+  3. `HTTP 201`, `prompts.filmScript` = `F`, `prompts.cloneScript` = `T`; `filmOutline`, `storyBible` and `speakersAndSounds` = their `{default text}`
   4. `HTTP 400`, `detail` = `Not a prompt preset file`
+
+### TC-PP-19: Speakers & sounds — editor, export and older files
+- **App:** Frontend + API
+- **Precondition:** `v4.preset.json` = a `formatVersion` 4 file with the eleven keys of 2.4 rule 2, each `X`, name
+  `V4 export`.
+- **Steps:**
+  1. Navigate to http://localhost:5071/settings?tab=prompt-override; expand `Added by the app` under `Speakers & sounds`, then under `Character voice prompts`
+  2. `curl -s P/defaults`
+  3. `curl -s -X POST P/import -F 'file=@v4.preset.json'`
+  4. The same file with `"formatVersion":5`
+- **Expected:**
+  - Step 1: `Speakers & sounds` shows the output shape `speakers[] { name, voice }`, `lines[] { atMs, speaker }`, `sounds[] { atMs, kind, description }` with the kinds `action`, `silence`, `ambient`, `music`, and the parts `Speakers so far:`, `Use the same name for the same voice.`, `Transcript:`; `Character voice prompts` also shows the `full_video` line `The film is attached as video.`
+  - Step 2: `prompts.speakersAndSounds` asks to tell the voices apart and to mark sounds; `prompts.characterVoice` asks for one entry per distinct voice and no longer says the transcript has no speaker labels
+  - Step 3: `HTTP 201`, every imported prompt = `X`; `prompts.speakersAndSounds` = its `{default text}`
+  - Step 4: `HTTP 400`, `detail` = `Not a prompt preset file` — version 5 needs all twelve
 
 ## Startup
 

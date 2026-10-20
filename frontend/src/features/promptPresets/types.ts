@@ -1,5 +1,6 @@
 export type PromptKey =
   | "videoToMarkdown"
+  | "speakersAndSounds"
   | "characterImage"
   | "characterVoice"
   | "scene"

@@ -60,16 +60,13 @@ from app.modules.film_clones.models import (
     CloneStatus,
     CloneStep,
     FilmClone,
-    FrameKind,
 )
 from app.modules.film_clones.repository import LOCALIZED_FIELDS_CLEARED, FilmCloneRepository
-from app.modules.jobs.film_analysis.frames import SCENE_CHANGE_TITLE
-from app.modules.jobs.film_analysis.notes_passes import WrittenNotes
+from app.modules.jobs.film_analysis.notes_passes import CapturedFilmFrame, WrittenNotes
 from app.modules.jobs.job_prompts import PROMPTS_OPTION_KEY, get_job_prompt
 from app.modules.jobs.models import Job, JobOutputKind, JobStatus, JobStep
 from app.modules.jobs.repository import JobRepository
 from app.modules.jobs.storage import JobStorage, to_safe_stem
-from app.modules.jobs.video_to_markdown.moments import KeyMoment
 from app.modules.jobs.video_to_markdown.transcript import format_timestamp
 from app.modules.prompt_presets.prompt_texts import (
     CloneLocalizationRequestText,
@@ -132,10 +129,7 @@ class CloneFrameSaver:
         clone = self._tools.repository.find_by_job_id(job.id)
         if clone is None:
             raise CloneStepFailedError(f"No film clone uses job {job.id}")
-        frames = [
-            to_frame_info(captured.moment, captured.image_relative_path)
-            for captured in notes.captured_moments
-        ]
+        frames = [to_frame_info(captured_frame) for captured_frame in notes.captured_frames]
         self._tools.repository.replace_assets_and_shots(
             clone.id, [], to_frame_rows(clone.id, frames)
         )
@@ -485,9 +479,13 @@ class CloneSceneImageCheck:
         self._repository.update_clone(clone_id, values)
 
 
-def to_frame_info(moment: KeyMoment, image_relative_path: str) -> FrameInfo:
-    kind = FrameKind.SCENE if moment.title == SCENE_CHANGE_TITLE else FrameKind.DIALOGUE
-    return FrameInfo(frame=image_relative_path, at_ms=moment.at_ms, kind=kind)
+def to_frame_info(captured_frame: CapturedFilmFrame) -> FrameInfo:
+    captured_moment = captured_frame.captured_moment
+    return FrameInfo(
+        frame=captured_moment.image_relative_path,
+        at_ms=captured_moment.moment.at_ms,
+        kind=captured_frame.kind,
+    )
 
 
 def to_asset_rows(clone_id: str, extracted_assets: Sequence[ExtractedAsset]) -> list[CloneAsset]:

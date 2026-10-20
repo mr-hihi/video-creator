@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     gemini_max_images_per_call: int = 300
     openai_max_images_per_call: int = 300
     sample_frame_width: int = 512
+    ai_media_part_sec: int = 1800
+    ai_audio_timeout_sec: int = 900
+    full_video_max_side_px: int = 480
+    full_video_max_fps: int = 24
 
     ytdlp_bin: str = "yt-dlp"
     youtube_max_duration_min: int = 180

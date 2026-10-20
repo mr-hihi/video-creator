@@ -1,6 +1,6 @@
-import type { Job, JobStep } from "@/features/jobs/types";
+import type { Job, JobOptions, JobStep } from "@/features/jobs/types";
 import type { PresetPrompts, PresetSnapshot } from "@/features/promptPresets/types";
-import type { AiProviderId, AiUsed } from "@/features/settings/types";
+import type { AiProviderId, AiUsed, InputMode } from "@/features/settings/types";
 
 export type FilmCloneStatus = "running" | "waiting" | "done" | "failed";
 
@@ -21,6 +21,7 @@ export type CloneJobStep = Extract<
   | "extracting_audio"
   | "transcribing"
   | "fetching_transcript"
+  | "listening_to_audio"
   | "picking_moments"
   | "downloading_video"
   | "sampling_frames"
@@ -44,7 +45,7 @@ export type CloneImageOrientation = "landscape" | "portrait";
 
 export type AssetKind = "character" | "costume" | "prop" | "location";
 
-export type FrameKind = "dialogue" | "scene";
+export type FrameKind = "dialogue" | "sound" | "scene";
 
 export type ShotSize =
   | "extreme_wide"
@@ -183,9 +184,14 @@ export interface GenerationRequest {
   finishedAt: string | null;
 }
 
-export type CloneJob = Omit<Job, "type" | "step"> & {
+export type CloneJobOptions = Omit<JobOptions, "inputMode"> & {
+  inputMode?: InputMode;
+};
+
+export type CloneJob = Omit<Job, "type" | "step" | "options"> & {
   type: FilmCloneJobType;
   step: CloneJobStep | null;
+  options: CloneJobOptions;
 };
 
 export interface FilmCloneDetail extends FilmClone {

@@ -44,6 +44,7 @@ PRESET_OPTION = {"id": PRESET_ID, "name": "Anime", "version": 3}
 AI_OPTIONS = {"inputMode": "whole_video"}
 ALL_PROMPTS_OPTION = {
     "videoToMarkdown": DEFAULT_PRESET_PROMPTS.video_to_markdown,
+    "speakersAndSounds": DEFAULT_PRESET_PROMPTS.speakers_and_sounds,
     "characterImage": DEFAULT_PRESET_PROMPTS.character_image,
     "characterVoice": DEFAULT_PRESET_PROMPTS.character_voice,
     "scene": DEFAULT_PRESET_PROMPTS.scene,
@@ -102,6 +103,7 @@ def preset_service():
 def settings_service():
     service = MagicMock(spec=AppSettingService)
     service.get_input_mode.return_value = InputMode.WHOLE_VIDEO
+    service.get_film_analysis_input_mode.return_value = InputMode.SUBTITLES
     service.get_film_clone_input_mode.return_value = InputMode.SUBTITLES
     return service
 
@@ -328,6 +330,18 @@ def youtube_film_job_with_default_frames(youtube_service):
     return youtube_service.create_youtube_film_analysis_job(build_youtube_request("vi"), None)
 
 
+@pytest.fixture
+def youtube_whole_video_film_job(youtube_service, settings_service):
+    settings_service.get_film_analysis_input_mode.return_value = InputMode.WHOLE_VIDEO
+    return youtube_service.create_youtube_film_analysis_job(build_youtube_request("vi"), 60)
+
+
+@pytest.fixture
+def youtube_full_video_film_job(youtube_service, settings_service):
+    settings_service.get_film_analysis_input_mode.return_value = InputMode.FULL_VIDEO
+    return youtube_service.create_youtube_film_analysis_job(build_youtube_request("vi"), 5)
+
+
 @pytest.fixture(params=[9, 1001])
 def youtube_film_max_frames_error(request, youtube_service):
     return capture_error(
@@ -510,7 +524,7 @@ def test_create_youtube_film_analysis_job_copies_every_prompt(youtube_film_job):
         "maxFrames": 60,
         "preset": PRESET_OPTION,
         "prompts": ALL_PROMPTS_OPTION,
-        **AI_OPTIONS,
+        "inputMode": "subtitles",
     }
 
 
@@ -518,7 +532,27 @@ def test_create_youtube_film_analysis_job_checks_the_moments_and_analysis_models
     step_models, youtube_film_job
 ):
     step_models.ensure_set_up.assert_called_once_with(
-        (AiStepGroup.MOMENTS, AiStepGroup.FILM_ANALYSIS)
+        (AiStepGroup.MOMENTS, AiStepGroup.FILM_ANALYSIS), ()
+    )
+
+
+def test_create_youtube_film_analysis_job_copies_the_film_analysis_input_mode(
+    youtube_whole_video_film_job, step_models
+):
+    assert youtube_whole_video_film_job.options["inputMode"] == "whole_video"
+    step_models.ensure_set_up.assert_called_once_with(
+        (AiStepGroup.MOMENTS, AiStepGroup.FILM_ANALYSIS, AiStepGroup.AUDIO),
+        (AiStepGroup.AUDIO,),
+    )
+
+
+def test_create_youtube_film_analysis_job_in_full_video_has_no_max_frames(
+    youtube_full_video_film_job, step_models
+):
+    assert youtube_full_video_film_job.options["inputMode"] == "full_video"
+    assert "maxFrames" not in youtube_full_video_film_job.options
+    step_models.ensure_set_up.assert_called_once_with(
+        (AiStepGroup.FILM_ANALYSIS,), (AiStepGroup.FILM_ANALYSIS,)
     )
 
 
@@ -541,6 +575,23 @@ def film_clone_ai_options(intake):
     return intake.resolve_film_clone_ai_options((AiStepGroup.MOMENTS, AiStepGroup.FILM_CLONE))
 
 
+@pytest.fixture
+def whole_video_film_clone_ai_options(intake, settings_service):
+    settings_service.get_film_clone_input_mode.return_value = InputMode.WHOLE_VIDEO
+    return intake.resolve_film_clone_ai_options((AiStepGroup.MOMENTS, AiStepGroup.FILM_CLONE))
+
+
 def test_a_film_clone_job_takes_the_film_clone_input_mode(film_clone_ai_options, step_models):
     assert film_clone_ai_options == {"inputMode": "subtitles"}
-    step_models.ensure_set_up.assert_called_once_with((AiStepGroup.MOMENTS, AiStepGroup.FILM_CLONE))
+    step_models.ensure_set_up.assert_called_once_with(
+        (AiStepGroup.MOMENTS, AiStepGroup.FILM_CLONE), ()
+    )
+
+
+def test_a_film_clone_job_in_whole_video_also_checks_a_google_audio_model(
+    whole_video_film_clone_ai_options, step_models
+):
+    assert whole_video_film_clone_ai_options == {"inputMode": "whole_video"}
+    step_models.ensure_set_up.assert_called_once_with(
+        (AiStepGroup.MOMENTS, AiStepGroup.FILM_CLONE, AiStepGroup.AUDIO), (AiStepGroup.AUDIO,)
+    )

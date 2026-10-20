@@ -21,7 +21,7 @@ import {
 } from "@/features/filmClones/utils";
 import { ACCEPTED_VIDEO_EXTENSIONS, UPLOAD_LANGUAGE_OPTIONS, type UploadLanguage } from "@/features/jobs/constants";
 import { languageChanged, selectUploadLanguage } from "@/features/jobs/uploadPreferencesSlice";
-import { AI_STEP_GROUPS_BY_RUN, FILM_CLONE_SETTINGS_TAB } from "@/features/settings/constants";
+import { FILM_CLONE_SETTINGS_TAB } from "@/features/settings/constants";
 import { useAiModelStatus } from "@/features/settings/queries";
 import { isAiModelBlocked } from "@/features/settings/utils";
 import { IS_CAPTCHA_ENABLED } from "@/lib/captcha/captchaWidget";
@@ -34,7 +34,7 @@ export function CloneUploadForm() {
   const dispatch = useAppDispatch();
   const language = useAppSelector(selectUploadLanguage);
   const createCloneMutation = useCreateFilmCloneMutation();
-  const aiModelStatus = useAiModelStatus(AI_STEP_GROUPS_BY_RUN.filmClone);
+  const aiModelStatus = useAiModelStatus({ kind: "filmClone" });
   const captchaRef = useRef<CaptchaHandle>(null);
   const [selectedFile, setSelectedFile] = useState<File>();
   const [captchaToken, setCaptchaToken] = useState<string>();
@@ -100,13 +100,7 @@ export function CloneUploadForm() {
       <PromptPresetSelect selectedPresetId={presetId} isDisabled={isUploading} onChange={setPresetId} />
       <CloneMaxFramesField value={maxFramesText} isDisabled={isUploading} onChange={setMaxFramesText} />
       <AutomaticRunFields automaticRun={automaticRun} isDisabled={isUploading} onChange={setAutomaticRun} />
-      {aiModelStatus && (
-        <AiModelLine
-          status={aiModelStatus}
-          inputMode={aiModelStatus.filmCloneInputMode}
-          inputModeSettingsTab={FILM_CLONE_SETTINGS_TAB}
-        />
-      )}
+      {aiModelStatus && <AiModelLine status={aiModelStatus} inputModeSettingsTab={FILM_CLONE_SETTINGS_TAB} />}
       <FilmCloneMediaLine />
       <Captcha ref={captchaRef} onToken={setCaptchaToken} onTokenCleared={() => setCaptchaToken(undefined)} />
       {isUploading && <UploadProgress uploadedPercent={uploadedPercent} />}

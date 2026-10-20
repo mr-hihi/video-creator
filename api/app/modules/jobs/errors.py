@@ -57,6 +57,11 @@ class NoVideoNotesError(Exception):
         super().__init__(f"Job {job_id} has no video notes to reuse")
 
 
+class NoCompressedVideoError(Exception):
+    def __init__(self, job_id: str):
+        super().__init__(f"Job {job_id} has no compressed video to reuse")
+
+
 class NoZipDownloadError(Exception):
     def __init__(self, job_id: str):
         super().__init__(f"Job {job_id} has no zip download")

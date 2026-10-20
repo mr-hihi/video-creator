@@ -12,7 +12,6 @@ import { UPLOAD_LANGUAGE_OPTIONS, YOUTUBE_LINK_PLACEHOLDER, type UploadLanguage 
 import { useCreateYoutubeToMarkdownJobMutation } from "@/features/jobs/queries";
 import { languageChanged, selectUploadLanguage } from "@/features/jobs/uploadPreferencesSlice";
 import { buildJobDetailPath } from "@/features/jobs/utils";
-import { AI_STEP_GROUPS_BY_RUN } from "@/features/settings/constants";
 import { useAiModelStatus } from "@/features/settings/queries";
 import { isAiModelBlocked } from "@/features/settings/utils";
 import { IS_CAPTCHA_ENABLED } from "@/lib/captcha/captchaWidget";
@@ -24,7 +23,7 @@ export function YoutubeLinkForm() {
   const dispatch = useAppDispatch();
   const language = useAppSelector(selectUploadLanguage);
   const createJobMutation = useCreateYoutubeToMarkdownJobMutation();
-  const aiModelStatus = useAiModelStatus(AI_STEP_GROUPS_BY_RUN.videoToMarkdown);
+  const aiModelStatus = useAiModelStatus({ kind: "videoToMarkdown" });
   const captchaRef = useRef<CaptchaHandle>(null);
   const [link, setLink] = useState("");
   const [captchaToken, setCaptchaToken] = useState<string>();
@@ -75,7 +74,7 @@ export function YoutubeLinkForm() {
         onChange={(nextLanguage) => dispatch(languageChanged(nextLanguage))}
       />
       <PromptPresetSelect selectedPresetId={presetId} isDisabled={isChecking} onChange={setPresetId} />
-      {aiModelStatus && <AiModelLine status={aiModelStatus} inputMode={aiModelStatus.inputMode} />}
+      {aiModelStatus && <AiModelLine status={aiModelStatus} />}
       <Captcha ref={captchaRef} onToken={setCaptchaToken} onTokenCleared={() => setCaptchaToken(undefined)} />
       {createJobMutation.isError && <ErrorAlert>{createJobMutation.error.message}</ErrorAlert>}
       <Button type="submit" disabled={!canSubmit}>

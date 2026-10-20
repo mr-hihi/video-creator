@@ -1,5 +1,5 @@
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
 from enum import StrEnum
 
 from app.modules.films.part_rules import MAX_PART_DURATION_S, MIN_PART_DURATION_S
@@ -9,6 +9,7 @@ from app.modules.films.story_rules import STORY_BIBLE_LIMIT
 
 class PromptKey(StrEnum):
     VIDEO_TO_MARKDOWN = "videoToMarkdown"
+    SPEAKERS_AND_SOUNDS = "speakersAndSounds"
     CHARACTER_IMAGE = "characterImage"
     CHARACTER_VOICE = "characterVoice"
     SCENE = "scene"
@@ -24,6 +25,7 @@ class PromptKey(StrEnum):
 @dataclass(frozen=True)
 class PresetPrompts:
     video_to_markdown: str
+    speakers_and_sounds: str
     character_image: str
     character_voice: str
     scene: str
@@ -61,43 +63,68 @@ DEFAULT_PRESET_PROMPTS = PresetPrompts(
         "the title, the summary and every moment title in the same language as the transcript, "
         "whatever language these instructions use. Answer only through the structured output."
     ),
+    speakers_and_sounds=(
+        "You listen to one part of a film and tell its voices apart.\n\n"
+        "1. Tell the voices apart by pitch, timbre, accent and way of speaking. Give each "
+        "distinct voice one speaker, named as the film names them when a name is heard, "
+        'otherwise by a short label such as "Older man, deep voice". Keep the name the earlier '
+        "parts gave the same voice.\n"
+        "2. Describe each voice in English: gender presentation, apparent age, pitch, pace, "
+        "timbre, accent and usual emotion.\n"
+        "3. Give every transcript line the speaker who says it, at the line's start time. Leave "
+        "out a line no voice matches.\n"
+        "4. Mark the sounds that are not speech, each with the time it starts, in milliseconds "
+        "from the start of the film, and a short English description: the sound of an action "
+        "(footsteps, a door, a blow, crying, laughter), a silence of 3 s or more, a sound of the "
+        "surroundings (an animal, rain, wind, traffic, a crowd), music that starts or changes "
+        "mood.\n\n"
+        "Answer only through the structured output."
+    ),
     character_image=(
-        "You turn the notes of a film into reference image prompts for its characters.\n\n"
-        "1. List every recurring character who appears in the frames or is named in the notes. "
-        "Use the character's name when the notes give one, otherwise a short visual label such "
-        'as "Woman in red coat". Skip crowds and one-off extras.\n'
-        "2. For each character give their role in the story, the timestamps where they appear, "
+        "You turn a film — its notes and frames, or the film itself attached as video — into "
+        "reference image prompts for its characters.\n\n"
+        "1. List every recurring character seen in the frames or the video, named in the notes "
+        "or heard speaking. Use the character's name when the film gives one, otherwise a short "
+        'visual label such as "Woman in red coat". Skip crowds and one-off extras.\n'
+        "2. Tell the characters apart by who speaks and by voice too: one entry per person, "
+        "never two for the same voice. Use the speaker names of the notes when they are given.\n"
+        "3. For each character give their role in the story, the timestamps where they appear, "
         "and two image prompts in English: a head-and-shoulders reference portrait, and a "
         "full-body shot on a plain background.\n"
-        "3. Each prompt covers apparent age range, build, face, hair, skin tone, outfit, "
+        "4. Each prompt covers apparent age range, build, face, hair, skin tone, outfit, "
         "accessories, usual expression, and the film's visual style (live action or animation, "
         "era, lighting).\n"
-        "4. Describe only what is visible in the frames or stated in the notes. Mark anything "
-        'you guess with "(inferred)".\n\n'
+        "5. Describe only what is visible or stated. Mark anything you guess with "
+        '"(inferred)".\n\n'
         'Answer in Markdown, with one "## {character label}" section per character.'
     ),
     character_voice=(
-        "You turn the notes of a film into voice-design prompts for its speaking characters.\n\n"
+        "You turn a film — its notes and frames, or the film itself attached as video — into "
+        "voice-design prompts for its speaking characters.\n\n"
         "1. Cover every character who speaks, using the labels of the character list you are "
         "given.\n"
-        "2. For each character write one voice-design prompt in English covering gender "
+        "2. Tell the speakers apart by their voices: one entry per distinct voice, never one "
+        "voice split into two characters or two voices merged into one.\n"
+        "3. For each character write one voice-design prompt in English covering gender "
         "presentation, apparent age, pitch, pace, timbre, accent, and usual emotion and "
-        "delivery.\n"
-        "3. Quote 1-3 short lines that character says, copied from the notes in their original "
-        "language.\n"
-        "4. The transcript has no speaker labels, so attribute lines from context and the "
-        'frames. Mark any line or trait you attribute by guess with "(inferred)".\n\n'
+        "delivery — as heard when the film is attached as video.\n"
+        "4. Quote 1-3 short lines that character says, from the transcript or the video, in "
+        "their original language.\n"
+        "5. Take who says each line from the speakers of the notes, or from what is heard in "
+        "the video. Without either, mark any line or trait you attribute by guess with "
+        '"(inferred)".\n\n'
         'Answer in Markdown, with one "## {character label}" section per character.'
     ),
     scene=(
-        "You turn the notes of a film into prompts for generating similar shots with a video "
-        "model.\n\n"
-        "1. Write one prompt per distinct shot shown in the frames, in time order, under a "
-        'heading "## {timestamp} — {short title}".\n'
+        "You turn a film — its notes and frames, or the film itself attached as video — into "
+        "prompts for generating similar shots with a video model.\n\n"
+        "1. Write one prompt per distinct shot shown in the frames or the video, in time order, "
+        'under a heading "## {timestamp} — {short title}".\n'
         "2. Write each prompt in English for a shot similar to the original: subject and "
         "action, setting, time of day, shot size, camera angle and movement, lighting, colour "
         "palette, mood, and a length of 5-8 seconds.\n"
-        "3. Refer to characters by the labels of the character list you are given.\n\n"
+        "3. Refer to characters by the labels of the character list you are given, and say who "
+        "speaks in the shot.\n\n"
         "Answer in Markdown."
     ),
     film_outline=(
@@ -156,7 +183,8 @@ DEFAULT_PRESET_PROMPTS = PresetPrompts(
         "story, seen in the frames or named in the notes. Skip crowds and one-off background "
         "items.\n"
         '2. Name each one as the film does, otherwise by a short label such as "Red lacquer '
-        'fan", and describe how it looks.\n'
+        'fan", and describe how it looks. Name a character as the speaker the video notes give '
+        "when it is the same person, so the script's dialogue and the assets match.\n"
         "3. Give the culture or country it comes from and its historical period, judged from "
         "clothing, architecture, objects, language and setting. Answer Unknown when the film "
         "gives no clue; never guess a country from a face alone.\n"
@@ -185,7 +213,8 @@ DEFAULT_PRESET_PROMPTS = PresetPrompts(
         "You retell a film shot by shot as a new script.\n\n"
         "1. Keep the plot, the order and the emotion of every shot.\n"
         "2. Write each description as what the viewer sees, and the dialogue from the video "
-        "notes in the script language, with the original tone and register.\n"
+        "notes in the script language, with the original tone and register, each line given to "
+        "the character the notes name as its speaker.\n"
         "3. Write each image prompt in English: the subjects by asset name and look, the action, "
         "the setting, the shot size and camera angle, light and mood — so the image can be made "
         "without seeing the film.\n"
@@ -250,6 +279,22 @@ NO_SPEECH_IN_WINDOW_LINE = "(no speech in this part)"
 WHOLE_VIDEO_MODE_HEADING = (
     "Whole video mode — one message per part of the video, its frames attached at one per second:"
 )
+SPEAKERS_AND_SOUNDS_SHAPE_DESCRIPTION = (
+    "Reply shape (JSON schema, fixed): speakers[] { name, voice }, lines[] { atMs, speaker }, "
+    "sounds[] { atMs, kind: action | silence | ambient | music, description }"
+)
+SAME_SPEAKER_NAME_INSTRUCTION = "Use the same name for the same voice."
+AUDIO_PART_PLACEHOLDER = "[audio {start}–{end}] {the part as audio}"
+FILM_ATTACHED_AS_VIDEO_LINE = "The film is attached as video."
+ANSWER_AGAIN_INSTRUCTION = (
+    "Answer again for the whole film so far: keep every entry, update it with this part and add "
+    "the new ones."
+)
+FULL_VIDEO_MODE_HEADING = (
+    "Full video mode — no notes and no frames; one message per part of the film, the part "
+    "attached as video:"
+)
+VIDEO_PART_PLACEHOLDER = "[video {start}–{end}] {the part as video}"
 
 
 @dataclass(frozen=True)
@@ -320,6 +365,22 @@ class WindowMomentRequestText:
 
 
 @dataclass(frozen=True)
+class AudioPartRequestText:
+    start: str
+    end: str
+    speaker_lines: Sequence[str]
+    transcript_lines: str
+
+
+@dataclass(frozen=True)
+class FullVideoRequestText:
+    language_name: str | None
+    part_line: str | None
+    character_prompts: str | None
+    earlier_answer: str | None
+
+
+@dataclass(frozen=True)
 class CloneScriptRequestText:
     language_name: str
     country_name: str | None
@@ -345,6 +406,35 @@ def build_window_moment_message(text: WindowMomentRequestText) -> str:
         f"Transcript:\n{text.transcript_lines or NO_SPEECH_IN_WINDOW_LINE}\n\n"
         "Frames:"
     )
+
+
+def build_audio_part_message(text: AudioPartRequestText) -> str:
+    blocks = [f"This part of the film runs from {text.start} to {text.end}."]
+    if text.speaker_lines:
+        blocks.append(
+            "\n".join(["Speakers so far:", *text.speaker_lines, SAME_SPEAKER_NAME_INSTRUCTION])
+        )
+    blocks.append(f"Transcript:\n{text.transcript_lines or NO_SPEECH_IN_WINDOW_LINE}")
+    return "\n\n".join(blocks)
+
+
+def build_film_part_line(start: str, end: str, part_number: str, part_count: str) -> str:
+    return f"This part of the film runs from {start} to {end} (part {part_number} of {part_count})."
+
+
+def build_full_video_message(text: FullVideoRequestText) -> str:
+    opening_lines = [FILM_ATTACHED_AS_VIDEO_LINE]
+    if text.language_name:
+        opening_lines.append(f"Spoken language: {text.language_name}")
+    blocks = ["\n".join(opening_lines)]
+    if text.part_line:
+        blocks.append(text.part_line)
+    if text.character_prompts is not None:
+        blocks.append(f"Characters:\n\n{text.character_prompts}")
+    if text.earlier_answer is not None:
+        blocks.append(f"Your answer for the earlier parts:\n\n{text.earlier_answer}")
+        blocks.append(ANSWER_AGAIN_INSTRUCTION)
+    return "\n\n".join(blocks)
 
 
 def build_video_notes_message(video_notes: str) -> str:
@@ -467,12 +557,28 @@ def describe_app_added_parts() -> PresetPrompts:
                 build_window_moment_message(_WINDOW_MOMENT_PLACEHOLDERS),
             ]
         ),
-        character_image=build_video_notes_message(VIDEO_NOTES_PLACEHOLDER),
-        character_voice=build_video_notes_message_with_characters(
-            VIDEO_NOTES_PLACEHOLDER, CHARACTERS_PLACEHOLDER
+        speakers_and_sounds="\n\n".join(
+            [
+                SPEAKERS_AND_SOUNDS_SHAPE_DESCRIPTION,
+                build_audio_part_message(_AUDIO_PART_PLACEHOLDERS),
+                AUDIO_PART_PLACEHOLDER,
+            ]
         ),
-        scene=build_video_notes_message_with_characters(
-            VIDEO_NOTES_PLACEHOLDER, CHARACTERS_PLACEHOLDER
+        character_image=_with_full_video_parts(
+            build_video_notes_message(VIDEO_NOTES_PLACEHOLDER),
+            replace(_FULL_VIDEO_PLACEHOLDERS, character_prompts=None),
+        ),
+        character_voice=_with_full_video_parts(
+            build_video_notes_message_with_characters(
+                VIDEO_NOTES_PLACEHOLDER, CHARACTERS_PLACEHOLDER
+            ),
+            _FULL_VIDEO_PLACEHOLDERS,
+        ),
+        scene=_with_full_video_parts(
+            build_video_notes_message_with_characters(
+                VIDEO_NOTES_PLACEHOLDER, CHARACTERS_PLACEHOLDER
+            ),
+            replace(_FULL_VIDEO_PLACEHOLDERS, earlier_answer=None),
         ),
         film_outline="\n\n".join(
             [FILM_OUTLINE_SHAPE_DESCRIPTION, build_film_outline_message(_FILM_OUTLINE_PLACEHOLDERS)]
@@ -501,6 +607,17 @@ def describe_app_added_parts() -> PresetPrompts:
         clone_script="\n\n".join(
             [CLONE_SCRIPT_SHAPE_DESCRIPTION, build_clone_script_message(_CLONE_SCRIPT_PLACEHOLDERS)]
         ),
+    )
+
+
+def _with_full_video_parts(notes_message: str, full_video_text: FullVideoRequestText) -> str:
+    return "\n\n".join(
+        [
+            notes_message,
+            FULL_VIDEO_MODE_HEADING,
+            build_full_video_message(full_video_text),
+            VIDEO_PART_PLACEHOLDER,
+        ]
     )
 
 
@@ -612,6 +729,18 @@ _WINDOW_MOMENT_PLACEHOLDERS = WindowMomentRequestText(
     end="{end}",
     max_moments="{m}",
     transcript_lines=TRANSCRIPT_LINE_PLACEHOLDER,
+)
+_AUDIO_PART_PLACEHOLDERS = AudioPartRequestText(
+    start="{start}",
+    end="{end}",
+    speaker_lines=["- {name} — {voice}, from the second part on", "…"],
+    transcript_lines=TRANSCRIPT_LINE_PLACEHOLDER,
+)
+_FULL_VIDEO_PLACEHOLDERS = FullVideoRequestText(
+    language_name="{language name, when not auto}",
+    part_line=build_film_part_line("{start}", "{end}", "{k}", "{n}") + " — with more than one part",
+    character_prompts=CHARACTERS_PLACEHOLDER,
+    earlier_answer="{the answer for the previous part, from the second part on}",
 )
 _LOCALIZATION_PLACEHOLDERS = CloneLocalizationRequestText(
     country_name="{target country}",

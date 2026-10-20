@@ -46,6 +46,7 @@ export const CLONE_JOB_STEPS_BY_INPUT_MODE: Record<InputMode, Record<FilmCloneJo
     film_clone: [
       "extracting_audio",
       "transcribing",
+      "listening_to_audio",
       "sampling_frames",
       "picking_moments",
       ...SHARED_CLONE_JOB_STEPS,
@@ -53,6 +54,7 @@ export const CLONE_JOB_STEPS_BY_INPUT_MODE: Record<InputMode, Record<FilmCloneJo
     youtube_film_clone: [
       "fetching_transcript",
       "downloading_video",
+      "listening_to_audio",
       "sampling_frames",
       "picking_moments",
       ...SHARED_CLONE_JOB_STEPS,
@@ -204,6 +206,7 @@ export const CAMERA_ANGLE_LABELS: Record<CameraAngle, string> = {
 
 export const FRAME_KIND_LABELS: Record<FrameKind, string> = {
   dialogue: "Dialogue",
+  sound: "Sound",
   scene: "Scene change",
 };
 

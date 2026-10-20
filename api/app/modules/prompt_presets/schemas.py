@@ -16,6 +16,7 @@ class PromptsBody(BaseModel):
     model_config = CAMEL_CASE_CONFIG
 
     video_to_markdown: str
+    speakers_and_sounds: str
     character_image: str
     character_voice: str
     scene: str

@@ -1,21 +1,22 @@
 from uuid import uuid4
 
+from app.modules.ai_models.ai_calls import InputMode
 from app.modules.jobs.errors import (
     JobNotDeletableError,
     JobNotFoundError,
     JobStillRunningError,
+    NoCompressedVideoError,
     NotFilmAnalysisJobError,
     NoVideoNotesError,
 )
 from app.modules.jobs.film_analysis.job_options import (
-    MAX_FRAMES_KEY,
     RERUN_OF_JOB_ID_KEY,
     copy_reused_source_options,
-    to_valid_max_frames,
 )
-from app.modules.jobs.job_ai import FILM_ANALYSIS_AI_GROUPS, RERUN_AI_GROUPS
+from app.modules.jobs.film_analysis.media_parts import find_part_paths
+from app.modules.jobs.job_ai import INPUT_MODE_OPTION_KEY, get_job_input_mode, to_rerun_ai_check
 from app.modules.jobs.job_intake import JobIntake
-from app.modules.jobs.job_prompts import FILM_ANALYSIS_PROMPT_KEYS, FILM_PROMPT_PASS_KEYS
+from app.modules.jobs.job_prompts import FILM_PROMPT_PASS_KEYS
 from app.modules.jobs.models import (
     FILM_ANALYSIS_JOB_TYPES,
     FINISHED_JOB_STATUSES,
@@ -39,11 +40,7 @@ class FilmAnalysisJobService:
 
     def create_film_analysis_job(self, upload: VideoUpload, max_frames: int | None) -> Job:
         validate_video_upload(upload)
-        valid_max_frames = to_valid_max_frames(max_frames)
-        prompt_options = self._intake.resolve_prompt_options(
-            upload.preset_id, FILM_ANALYSIS_PROMPT_KEYS
-        )
-        ai_options = self._intake.resolve_ai_options(FILM_ANALYSIS_AI_GROUPS)
+        analysis_options = self._intake.resolve_film_analysis_options(upload.preset_id, max_frames)
         job_id = str(uuid4())
         self._storage.save_source(job_id, upload.filename, upload.stream)
         return self._intake.enqueue(
@@ -52,20 +49,17 @@ class FilmAnalysisJobService:
                 type=JobType.FILM_ANALYSIS,
                 status=JobStatus.PENDING,
                 source_filename=upload.filename[:MAX_SOURCE_FILENAME_LENGTH],
-                options={
-                    LANGUAGE_KEY: upload.language,
-                    MAX_FRAMES_KEY: valid_max_frames,
-                    **prompt_options,
-                    **ai_options,
-                },
+                options={LANGUAGE_KEY: upload.language, **analysis_options},
             )
         )
 
     def create_rerun_job(self, source_job_id: str, preset_id: str | None) -> Job:
         source_job = self._get_film_analysis_job(source_job_id)
+        if get_job_input_mode(source_job.options) is InputMode.FULL_VIDEO:
+            return self._create_full_video_rerun_job(source_job, preset_id)
         video_notes = self._get_reusable_video_notes(source_job)
         prompt_options = self._intake.resolve_prompt_options(preset_id, FILM_PROMPT_PASS_KEYS)
-        self._intake.ensure_ai_set_up(RERUN_AI_GROUPS)
+        self._intake.ensure_ai_set_up(to_rerun_ai_check(InputMode.SUBTITLES))
         job_id = str(uuid4())
         self._storage.copy_images(source_job.id, job_id)
         return self._intake.enqueue(
@@ -92,6 +86,27 @@ class FilmAnalysisJobService:
         self._repository.delete(job_id)
         self._storage.delete_job_files(job_id)
 
+    def _create_full_video_rerun_job(self, source_job: Job, preset_id: str | None) -> Job:
+        self._ensure_reusable_compressed_video(source_job)
+        prompt_options = self._intake.resolve_prompt_options(preset_id, FILM_PROMPT_PASS_KEYS)
+        self._intake.ensure_ai_set_up(to_rerun_ai_check(InputMode.FULL_VIDEO))
+        job_id = str(uuid4())
+        self._storage.copy_compressed(source_job.id, job_id)
+        return self._intake.enqueue(
+            Job(
+                id=job_id,
+                type=JobType.FILM_ANALYSIS_RERUN,
+                status=JobStatus.PENDING,
+                source_filename=source_job.source_filename,
+                options={
+                    **copy_reused_source_options(source_job.options),
+                    INPUT_MODE_OPTION_KEY: InputMode.FULL_VIDEO.value,
+                    RERUN_OF_JOB_ID_KEY: source_job.id,
+                    **prompt_options,
+                },
+            )
+        )
+
     def _get_job(self, job_id: str) -> Job:
         job = self._repository.find_by_id(job_id)
         if job is None:
@@ -109,3 +124,8 @@ class FilmAnalysisJobService:
         if source_job.status not in FINISHED_JOB_STATUSES or video_notes is None:
             raise NoVideoNotesError(source_job.id)
         return video_notes
+
+    def _ensure_reusable_compressed_video(self, source_job: Job) -> None:
+        is_finished = source_job.status in FINISHED_JOB_STATUSES
+        if not is_finished or not find_part_paths(self._storage.compressed_dir(source_job.id)):
+            raise NoCompressedVideoError(source_job.id)

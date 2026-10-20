@@ -41,7 +41,6 @@ import {
 } from "@/features/films/utils";
 import { selectUploadLanguage } from "@/features/jobs/uploadPreferencesSlice";
 import type { JobDetail } from "@/features/jobs/types";
-import { AI_STEP_GROUPS_BY_RUN } from "@/features/settings/constants";
 import { useAiModelStatus } from "@/features/settings/queries";
 import { isAiModelBlocked } from "@/features/settings/utils";
 import { IS_CAPTCHA_ENABLED } from "@/lib/captcha/captchaWidget";
@@ -61,7 +60,7 @@ export function SendAnalysisToFilmStudioForm({ job, onClose }: SendAnalysisToFil
   const createProjectMutation = useCreateFilmProjectMutation();
   const createEpisodeMutation = useCreateFilmEpisodeMutation();
   const episodeActionMutation = useEpisodeActionMutation();
-  const aiModelStatus = useAiModelStatus(AI_STEP_GROUPS_BY_RUN.filmScript);
+  const aiModelStatus = useAiModelStatus({ kind: "filmScript" });
   const captchaRef = useRef<CaptchaHandle>(null);
   const [selectedProjectId, setSelectedProjectId] = useState(NEW_PROJECT_VALUE);
   const [projectName, setProjectName] = useState(() => buildProjectNameFromFilename(job.sourceFilename));

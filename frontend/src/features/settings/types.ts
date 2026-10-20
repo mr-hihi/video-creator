@@ -11,9 +11,11 @@ export type ScriptLanguage = "follow_target_country" | "vi" | "ja" | "ko" | "zh"
 
 export type AiProviderId = Extract<ProviderId, "claude_cli" | "google" | "openai">;
 
-export type AiStepGroup = "moments" | "filmAnalysis" | "filmScript" | "filmClone";
+export type AiStepGroup = "moments" | "audio" | "filmAnalysis" | "filmScript" | "filmClone";
 
 export type InputMode = "subtitles" | "whole_video";
+
+export type FilmAnalysisInputMode = InputMode | "full_video";
 
 export interface AiModel {
   provider: AiProviderId;
@@ -27,6 +29,7 @@ export interface AppSettings {
   aiModel: AiModel;
   aiStepModels: AiStepModels;
   inputMode: InputMode;
+  filmAnalysisInputMode: FilmAnalysisInputMode;
   filmCloneInputMode: InputMode;
   filmCloneImageProvider: ImageRouteProviderId | null;
   filmStudioImageProvider: ImageRouteProviderId | null;
@@ -35,7 +38,7 @@ export interface AppSettings {
 
 export type MediaProviderSettingKey = "filmCloneImageProvider" | "filmStudioImageProvider" | "filmStudioClipProvider";
 
-export type AiModelSettings = Pick<AppSettings, "aiModel" | "aiStepModels" | "inputMode">;
+export type AiModelSettings = Pick<AppSettings, "aiModel" | "aiStepModels" | "inputMode" | "filmAnalysisInputMode">;
 
 export interface AiModelsDraft {
   settings: Partial<AiModelSettings>;
@@ -68,12 +71,21 @@ export interface ResolvedAiModel {
 export interface AiGroupModel extends ResolvedAiModel {
   group: AiStepGroup;
   aiModel: AiModel;
+  needsGoogleAi: boolean;
 }
 
-export interface AiModelStatus {
+export type AiRun =
+  | { kind: "videoToMarkdown" | "filmAnalysis" | "filmClone" | "filmScript" }
+  | { kind: "filmAnalysisRerun"; sourceInputMode: FilmAnalysisInputMode | undefined };
+
+export interface AiRunPlan {
+  groups: readonly AiStepGroup[];
+  inputMode?: FilmAnalysisInputMode;
+  inputModeLabel?: string;
+}
+
+export interface AiModelStatus extends Omit<AiRunPlan, "groups"> {
   groupModels: AiGroupModel[];
-  inputMode: InputMode;
-  filmCloneInputMode: InputMode;
 }
 
 export interface AiModelOption {

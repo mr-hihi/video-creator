@@ -22,6 +22,9 @@ class AiCaller:
     def find_model(self, group: AiStepGroup) -> AiModelChoice:
         return self._step_models.find_model(group)
 
+    def find_google_model(self, group: AiStepGroup) -> AiModelChoice:
+        return self._step_models.find_google_model(group)
+
     def ask_for_json(self, choice: AiModelChoice, ask: AiAsk, limits: AiLimits) -> dict[str, Any]:
         return self._clients_by_provider[choice.provider].ask_for_json(choice.model, ask, limits)
 

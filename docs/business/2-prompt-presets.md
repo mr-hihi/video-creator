@@ -2,13 +2,14 @@
 
 > One file = one domain. Every section below belongs to the **Prompt Presets** domain.
 
-Named sets of the eleven prompts the AI model (domain 8) runs inside the job pipelines, Film Clone and Film
+Named sets of the twelve prompts the AI model (domain 8) runs inside the job pipelines, Film Clone and Film
 Studio. The user sees the default text, edits it, keeps several presets, and picks one when creating a job;
 the job copies the prompts it needs at that moment (2.5). The same prompts serve Claude and Gemini.
 
 | Prompt | Key | Used by | Step |
 |---|---|---|---|
 | Video → Markdown | `videoToMarkdown` | Video to Markdown (1.5), Film Analysis (3.2), Film Clone (5.1) | `picking_moments` |
+| Speakers & sounds | `speakersAndSounds` | Film Analysis and Film Clone in `whole_video` (8.3) | `listening_to_audio` |
 | Character image prompts | `characterImage` | Film Analysis (3.3) | `writing_character_image_prompts` |
 | Character voice prompts | `characterVoice` | Film Analysis (3.3) | `writing_character_voice_prompts` |
 | Scene prompts | `scene` | Film Analysis (3.3) | `writing_scene_prompts` |
@@ -48,7 +49,7 @@ the job copies the prompts it needs at that moment (2.5). The same prompts serve
 | `version` | int | 1, 2, 3 … per preset; never reused, even after pruning |
 | `change` | enum | `created` \| `saved` \| `restored` \| `duplicated` \| `imported` |
 | `change_source` | string(120) \| null | `v{n}` for `restored`, `{name} v{n}` for `duplicated`, the file name for `imported` |
-| `video_to_markdown` / `character_image` / `character_voice` / `scene` / `film_outline` / `film_script` / `story_bible` / `clone_assets` / `clone_shots` / `clone_localization` / `clone_script` | text | the eleven prompts |
+| `video_to_markdown` / `speakers_and_sounds` / `character_image` / `character_voice` / `scene` / `film_outline` / `film_script` / `story_bible` / `clone_assets` / `clone_shots` / `clone_localization` / `clone_script` | text | the twelve prompts |
 | `created_at` | datetime (UTC) | |
 
 Unique (`preset_id`, `version`). A preset's current prompts are those of version `current_version`.
@@ -95,11 +96,34 @@ Added by the app:
 
 The reply is normalised as in 1.5 whatever the instructions say.
 
+### Speakers & sounds (`speakersAndSounds`)
+
+Default asks the model to:
+- listen to the part of the film and tell the voices apart by pitch, timbre, accent and way of speaking;
+- give each distinct voice one speaker, named as the film names them when a name is heard, else by a short
+  label such as `Older man, deep voice`; keep the name the earlier parts gave the same voice;
+- describe each voice in English: gender presentation, apparent age, pitch, pace, timbre, accent and usual
+  emotion;
+- give every transcript line the speaker who says it, and leave out a line no voice matches;
+- mark the sounds that are not speech, each with the time it starts and a short English description: the
+  sound of an action (footsteps, a door, a blow, crying, laughter), a silence of 3 s or more, a sound of the
+  surroundings (an animal, rain, wind, traffic, a crowd), music that starts or changes mood.
+
+Added by the app:
+- Output shape (JSON schema): `speakers[] { name, voice }`, `lines[] { atMs, speaker }`, `sounds[] { atMs,
+  kind, description }`, `kind` one of `action`, `silence`, `ambient`, `music`.
+- The user message of 8.3 § `listening_to_audio`: the part's times, the speakers so far, the part's
+  transcript lines, and the part as audio.
+
+The reply is normalised as in 8.3 whatever the instructions say.
+
 ### Character image prompts (`characterImage`)
 
 Default asks the model to:
-- list every recurring character seen in the frames or named in the notes — by name, else by a short
-  label such as `Woman in red coat`; skip crowds and one-off extras;
+- list every recurring character seen in the frames or the video, named in the notes or heard speaking —
+  by name, else by a short label such as `Woman in red coat`; skip crowds and one-off extras;
+- tell the characters apart by who speaks and by voice too: one entry per person, never two for the same
+  voice; use the speaker names of the notes when they are given;
 - give each character's role, the timestamps where they appear, and two English image prompts: a
   head-and-shoulders reference portrait and a full-body shot on a plain background;
 - cover apparent age range, build, face, hair, skin tone, outfit, accessories, usual expression, and
@@ -111,10 +135,13 @@ Default asks the model to:
 
 Default asks the model to:
 - cover every character who speaks, using the labels of the character image prompts;
+- tell the speakers apart by their voices: one entry per distinct voice, never one voice split into two
+  characters or two voices merged into one;
 - write one English voice-design prompt each: gender presentation, apparent age, pitch, pace, timbre,
-  accent, usual emotion and delivery;
-- quote 1–3 short lines of that character from the transcript, in the original language;
-- mark a line or trait attributed by guess `(inferred)` — the transcript has no speaker labels;
+  accent, usual emotion and delivery — as heard when the film is attached as video;
+- quote 1–3 short lines of that character from the transcript or the video, in the original language;
+- take who says each line from the speakers of the notes, or from what is heard in the video; without
+  either, mark a line or trait attributed by guess `(inferred)`;
 - answer in Markdown, one `##` per character.
 
 ### Scene prompts (`scene`)
@@ -123,7 +150,7 @@ Default asks the model to:
 - write one prompt per distinct shot in the frames, in time order, headed `## {timestamp} — {short title}`;
 - write each as an English video-generation prompt for a similar shot: subject and action, setting,
   time of day, shot size, camera angle and movement, lighting, colour palette, mood, 5–8 s length;
-- refer to characters by the labels of the character image prompts.
+- refer to characters by the labels of the character image prompts, and say who speaks in the shot.
 
 Added by the app, for the three prompts above:
 - The video notes (3.2) under a `Video notes:` heading.
@@ -132,6 +159,8 @@ Added by the app, for the three prompts above:
   of the model (3.3), each image after a text block with its path (`images/moment-01-00m00s.jpg`).
 - Voice and scene prompts only: the character image prompts answer of the same job under a
   `Characters:` heading, so the labels match.
+- `full_video` (3.3): no notes and no frames; instead `The film is attached as video.`, the spoken language,
+  the part's times, for image and voice the answer for the earlier parts, and the part as video.
 
 ### Film outline (`filmOutline`)
 
@@ -212,6 +241,8 @@ Default asks the model to:
 - list the characters, costumes, props and locations that recur or matter to the story, seen in the frames
   or named in the notes; skip crowds and one-off background items;
 - name each as the film does, else by a short label such as `Red lacquer fan`, and describe how it looks;
+- name a character as the speaker the video notes give when it is the same person, so the script's
+  dialogue and the assets match;
 - give the culture or country it comes from and its historical period, judged from clothing, architecture,
   objects, language and setting — `Unknown` when the film gives no clue, never a country guessed from a
   face alone;
@@ -255,7 +286,8 @@ Added by the app:
 Default asks the model to:
 - retell the film shot by shot, keeping the plot, the order and the emotion of every shot;
 - write each description as what the viewer sees, and the dialogue from the video notes in the script
-  language with the original tone and register;
+  language with the original tone and register, each line given to the character the notes name as its
+  speaker;
 - write each image prompt in English — the subjects by asset name and look, the action, the setting, the
   shot size and camera angle, light and mood — so the image can be made without seeing the film;
 - give a title and a one-sentence logline in the script language.
@@ -302,9 +334,10 @@ Attachment `{safe name}.preset.json` — `{safe name}` built like `{stem}` in 1.
 ```json
 {
   "format": "video-tool-prompt-preset",
-  "formatVersion": 4,
+  "formatVersion": 5,
   "name": "Anime",
-  "prompts": { "videoToMarkdown": "…", "characterImage": "…", "characterVoice": "…", "scene": "…",
+  "prompts": { "videoToMarkdown": "…", "speakersAndSounds": "…", "characterImage": "…",
+               "characterVoice": "…", "scene": "…",
                "filmOutline": "…", "filmScript": "…", "storyBible": "…",
                "cloneAssets": "…", "cloneShots": "…", "cloneLocalization": "…", "cloneScript": "…" }
 }
@@ -319,12 +352,12 @@ Multipart `file`.
 | # | Rule | Result |
 |---|---|---|
 | 1 | File ≤ 1 MB | 413 `Preset file exceeds 1 MB` |
-| 2 | JSON with `format` = `video-tool-prompt-preset`, `formatVersion` 1–4, string `name`, and the string prompts of that version — `videoToMarkdown`, `characterImage`, `characterVoice`, `scene` for 1; plus `filmScript` for 2; plus the four clone prompts for 3; all eleven for 4 | 400 `Not a prompt preset file` |
+| 2 | JSON with `format` = `video-tool-prompt-preset`, `formatVersion` 1–5, string `name`, and the string prompts of that version — `videoToMarkdown`, `characterImage`, `characterVoice`, `scene` for 1; plus `filmScript` for 2; plus the four clone prompts for 3; plus `filmOutline` and `storyBible` for 4; all twelve for 5 | 400 `Not a prompt preset file` |
 | 3 | Name and prompt rules of 2.3 | 400 as in 2.3 |
 
-- A file older than `formatVersion` 4 lacks the prompts its version does not list — 1 has no `filmScript`,
+- A file older than `formatVersion` 5 lacks the prompts its version does not list — 1 has no `filmScript`,
   no clone prompt, no `filmOutline` and no `storyBible`; 2 and 3 have no `filmOutline` and no `storyBible`;
-  the imported preset gets the code default for each missing one.
+  1 to 4 have no `speakersAndSounds`; the imported preset gets the code default for each missing one.
 - Name taken → `{name} (imported)`, then `(imported 2)` …, cut to fit as for duplicates.
 - Version 1, `change = imported`, `change_source` = the uploaded file name cut to 120 characters.
 
@@ -337,7 +370,7 @@ Multipart `file`.
 | Key | Value |
 |---|---|
 | `preset` | `{ "id", "name", "version" }` at that moment |
-| `prompts` | `videoToMarkdown` for Video to Markdown; `videoToMarkdown`, `characterImage`, `characterVoice`, `scene` for Film Analysis; `characterImage`, `characterVoice`, `scene` for a rerun (3.4); `videoToMarkdown`, `cloneAssets`, `cloneShots` for a Film Clone job (5.1) |
+| `prompts` | `videoToMarkdown` for Video to Markdown; `videoToMarkdown`, `speakersAndSounds`, `characterImage`, `characterVoice`, `scene` for Film Analysis; `characterImage`, `characterVoice`, `scene` for a rerun (3.4); `videoToMarkdown`, `speakersAndSounds`, `cloneAssets`, `cloneShots` for a Film Clone job (5.1) |
 
 - Steps read prompts from `options.prompts` only. Editing, restoring or deleting the preset afterwards
   changes no job, pending ones included.
@@ -395,13 +428,13 @@ chosen when it is created.`
 ## API endpoints
 
 Same JSON and error conventions as domain 1. Prompt keys in JSON: `videoToMarkdown`,
-`characterImage`, `characterVoice`, `scene`, `filmOutline`, `filmScript`, `storyBible`, `cloneAssets`,
-`cloneShots`, `cloneLocalization`, `cloneScript`.
+`speakersAndSounds`, `characterImage`, `characterVoice`, `scene`, `filmOutline`, `filmScript`, `storyBible`,
+`cloneAssets`, `cloneShots`, `cloneLocalization`, `cloneScript`.
 
 ```
 GET    /prompt-presets                              — PromptPreset[] (Default first, then by name)
 POST   /prompt-presets                              — { "name" } → 201 PromptPresetDetail
-GET    /prompt-presets/defaults                     — code defaults of the eleven prompts + the app-added parts (2.2)
+GET    /prompt-presets/defaults                     — code defaults of the twelve prompts + the app-added parts (2.2)
 GET    /prompt-presets/{id}                         — PromptPresetDetail
 PUT    /prompt-presets/{id}                         — { "name", "prompts" } → PromptPresetDetail
 DELETE /prompt-presets/{id}                         — 204

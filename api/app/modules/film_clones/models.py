@@ -6,6 +6,7 @@ from sqlalchemy import JSON, Boolean, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import LONG_TEXT_TYPE, Base, UtcDateTime, build_string_enum_type, utc_now
+from app.modules.jobs.film_analysis.frames import FrameKind
 
 
 class CloneStatus(StrEnum):
@@ -31,11 +32,6 @@ class AssetKind(StrEnum):
     COSTUME = "costume"
     PROP = "prop"
     LOCATION = "location"
-
-
-class FrameKind(StrEnum):
-    DIALOGUE = "dialogue"
-    SCENE = "scene"
 
 
 class ShotSize(StrEnum):

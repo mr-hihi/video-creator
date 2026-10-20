@@ -12,7 +12,9 @@ CAPTIONS_FORMAT = "json3"
 VIDEO_CONTAINER = "mp4"
 OUTPUT_EXTENSION_PLACEHOLDER = ".%(ext)s"
 VIDEO_ONLY_FORMAT = "bv/b"
+VIDEO_WITH_AUDIO_FORMAT = "bv*+ba/b"
 PREFERRED_VIDEO_CODEC = "h264"
+PREFERRED_AUDIO_CODEC = "aac"
 SUBTITLE_FLAGS_BY_KIND = {
     CaptionKind.MANUAL: "--write-subs",
     CaptionKind.AUTO: "--write-auto-subs",
@@ -57,7 +59,7 @@ class YtDlpDownloader:
         return _parse_json(captions_path.read_text(encoding="utf-8"), "captions")
 
     def download_video(self, video_url: str, output_path: Path) -> Path:
-        self._run(
+        return self._download(
             [
                 "-f",
                 VIDEO_ONLY_FORMAT,
@@ -65,6 +67,34 @@ class YtDlpDownloader:
                 f"res:{self._config.max_video_height},vcodec:{PREFERRED_VIDEO_CODEC}",
                 "--remux-video",
                 VIDEO_CONTAINER,
+            ],
+            video_url,
+            output_path,
+        )
+
+    def download_video_with_audio(self, video_url: str, output_path: Path) -> Path:
+        return self._download(
+            [
+                "-f",
+                VIDEO_WITH_AUDIO_FORMAT,
+                "-S",
+                (
+                    f"res:{self._config.max_video_height},vcodec:{PREFERRED_VIDEO_CODEC},"
+                    f"acodec:{PREFERRED_AUDIO_CODEC}"
+                ),
+                "--merge-output-format",
+                VIDEO_CONTAINER,
+                "--remux-video",
+                VIDEO_CONTAINER,
+            ],
+            video_url,
+            output_path,
+        )
+
+    def _download(self, format_arguments: list[str], video_url: str, output_path: Path) -> Path:
+        self._run(
+            [
+                *format_arguments,
                 "--no-progress",
                 "-o",
                 str(output_path.with_suffix(OUTPUT_EXTENSION_PLACEHOLDER)),

@@ -9,6 +9,7 @@ from app.modules.jobs.errors import (
     JobNotFoundError,
     JobPresetNotFoundError,
     JobStillRunningError,
+    NoCompressedVideoError,
     NotFilmAnalysisJobError,
     NoVideoNotesError,
     NoZipDownloadError,
@@ -32,6 +33,7 @@ STATUS_CODES_BY_ERROR: dict[type[Exception], int] = {
     JobStillRunningError: status.HTTP_409_CONFLICT,
     NotFilmAnalysisJobError: status.HTTP_409_CONFLICT,
     NoVideoNotesError: status.HTTP_409_CONFLICT,
+    NoCompressedVideoError: status.HTTP_409_CONFLICT,
     NoZipDownloadError: status.HTTP_409_CONFLICT,
 }
 

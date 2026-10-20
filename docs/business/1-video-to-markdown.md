@@ -161,7 +161,9 @@ capped at 30 s) so a bad link fails in the form instead of as a `failed` job.
 ### `downloading_video`
 
 - `yt-dlp` fetches the video stream only — no audio, frames need no sound — at height ≤
-  `YOUTUBE_VIDEO_HEIGHT`, h264 preferred, into `storage/{job-id}/source.mp4`.
+  `YOUTUBE_VIDEO_HEIGHT`, h264 preferred, into `storage/{job-id}/source.mp4`. A Film Analysis or Film Clone
+  job in `whole_video`, or a Film Analysis job in `full_video`, fetches the audio stream too, merged into the
+  same file (8.3).
 - Every worker-side `yt-dlp` call is limited to `YOUTUBE_TIMEOUT_SEC`.
 - Any failure (network, `Sign in to confirm you're not a bot`, timeout) → `failed` at
   `downloading_video` with `yt-dlp`'s error text. No automatic retry.

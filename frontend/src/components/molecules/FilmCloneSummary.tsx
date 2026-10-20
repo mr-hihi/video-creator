@@ -7,6 +7,7 @@ import {
 } from "@/features/filmClones/utils";
 import { describeCaptionKind, describeFrameCounts, describeLanguage } from "@/features/jobs/utils";
 import { describePresetSnapshot } from "@/features/promptPresets/utils";
+import { FILM_CLONE_INPUT_MODE_LABELS } from "@/features/settings/constants";
 import { describeInputMode } from "@/features/settings/utils";
 import { formatDateTime } from "@/lib/format";
 import { SummaryList, type SummaryItem } from "./SummaryList";
@@ -25,7 +26,10 @@ function buildCloneSummaryItems(clone: FilmCloneDetail): SummaryItem[] {
     { term: "Language", description: jobOptions ? describeLanguage(jobOptions.language) : EMPTY_VALUE_LABEL },
     { term: "Prompt preset", description: describePresetSnapshot(clone.preset) },
     { term: "AI", description: describeCloneAiUsed(clone) },
-    { term: "Input", description: jobOptions ? describeInputMode(jobOptions.inputMode) : EMPTY_VALUE_LABEL },
+    {
+      term: "Input",
+      description: jobOptions ? describeInputMode(jobOptions.inputMode, FILM_CLONE_INPUT_MODE_LABELS) : EMPTY_VALUE_LABEL,
+    },
     { term: "Frames", description: describeFrameCounts(jobOptions?.frameCounts) },
     { term: "Target country", description: describeTargetCountry(clone.targetCountry) },
     ...(clone.targetSetting ? [{ term: TARGET_SETTING_LABEL, description: clone.targetSetting }] : []),

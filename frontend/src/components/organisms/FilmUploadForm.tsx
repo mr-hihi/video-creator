@@ -19,9 +19,8 @@ import {
 import { useCreateFilmAnalysisJobMutation } from "@/features/jobs/queries";
 import { languageChanged, selectUploadLanguage } from "@/features/jobs/uploadPreferencesSlice";
 import { buildFilmAnalysisDetailPath, isValidMaxFrames } from "@/features/jobs/utils";
-import { AI_STEP_GROUPS_BY_RUN } from "@/features/settings/constants";
 import { useAiModelStatus } from "@/features/settings/queries";
-import { isAiModelBlocked } from "@/features/settings/utils";
+import { isAiModelBlocked, isFullVideoInputMode } from "@/features/settings/utils";
 import { IS_CAPTCHA_ENABLED } from "@/lib/captcha/captchaWidget";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { PromptPresetSelect } from "./PromptPresetSelect";
@@ -31,7 +30,7 @@ export function FilmUploadForm() {
   const dispatch = useAppDispatch();
   const language = useAppSelector(selectUploadLanguage);
   const createJobMutation = useCreateFilmAnalysisJobMutation();
-  const aiModelStatus = useAiModelStatus(AI_STEP_GROUPS_BY_RUN.filmAnalysis);
+  const aiModelStatus = useAiModelStatus({ kind: "filmAnalysis" });
   const captchaRef = useRef<CaptchaHandle>(null);
   const [selectedFile, setSelectedFile] = useState<File>();
   const [captchaToken, setCaptchaToken] = useState<string>();
@@ -41,8 +40,9 @@ export function FilmUploadForm() {
 
   const isUploading = createJobMutation.isPending;
   const hasCaptchaPassed = !IS_CAPTCHA_ENABLED || captchaToken !== undefined;
-  const maxFrames = Number(maxFramesText);
-  const hasValidMaxFrames = isValidMaxFrames(maxFrames);
+  const isMaxFramesShown = !isFullVideoInputMode(aiModelStatus?.inputMode);
+  const maxFrames = isMaxFramesShown ? Number(maxFramesText) : undefined;
+  const hasValidMaxFrames = maxFrames === undefined || isValidMaxFrames(maxFrames);
   const canSubmit =
     selectedFile !== undefined && hasValidMaxFrames && hasCaptchaPassed && !isAiModelBlocked(aiModelStatus) && !isUploading;
 
@@ -86,8 +86,10 @@ export function FilmUploadForm() {
         onChange={(nextLanguage) => dispatch(languageChanged(nextLanguage))}
       />
       <PromptPresetSelect selectedPresetId={presetId} isDisabled={isUploading} onChange={setPresetId} />
-      <MaxFramesField value={maxFramesText} isDisabled={isUploading} onChange={setMaxFramesText} />
-      {aiModelStatus && <AiModelLine status={aiModelStatus} inputMode={aiModelStatus.inputMode} />}
+      {isMaxFramesShown && (
+        <MaxFramesField value={maxFramesText} isDisabled={isUploading} onChange={setMaxFramesText} />
+      )}
+      {aiModelStatus && <AiModelLine status={aiModelStatus} />}
       <Captcha ref={captchaRef} onToken={setCaptchaToken} onTokenCleared={() => setCaptchaToken(undefined)} />
       {isUploading && <UploadProgress uploadedPercent={uploadedPercent} />}
       {createJobMutation.isError && <ErrorAlert>{createJobMutation.error.message}</ErrorAlert>}

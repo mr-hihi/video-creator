@@ -1,6 +1,7 @@
 from collections.abc import Mapping
 from typing import Any
 
+from app.modules.ai_models.ai_calls import InputMode
 from app.modules.jobs.errors import InvalidFilmAnalysisJobError
 from app.modules.jobs.youtube_to_markdown.job_options import (
     CAPTION_KIND_KEY,
@@ -32,6 +33,14 @@ def to_valid_max_frames(requested_max_frames: int | None) -> int:
             f"Max frames must be between {MAX_FRAMES_LOWER_LIMIT} and {MAX_FRAMES_UPPER_LIMIT}"
         )
     return requested_max_frames
+
+
+def to_max_frames_options(
+    requested_max_frames: int | None, input_mode: InputMode
+) -> dict[str, int]:
+    if input_mode is InputMode.FULL_VIDEO:
+        return {}
+    return {MAX_FRAMES_KEY: to_valid_max_frames(requested_max_frames)}
 
 
 def get_max_frames(options: Mapping[str, Any]) -> int:

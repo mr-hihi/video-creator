@@ -13,6 +13,7 @@ from app.modules.jobs.errors import (
     JobNotFoundError,
     JobPresetNotFoundError,
     JobStillRunningError,
+    NoCompressedVideoError,
     ResultNotReadyError,
     YoutubeUnreachableError,
 )
@@ -252,6 +253,12 @@ def rerun_rejected_captcha_response(client, captcha_service):
 
 
 @pytest.fixture
+def rerun_without_compressed_video_response(client, film_analysis_job_service):
+    film_analysis_job_service.create_rerun_job.side_effect = NoCompressedVideoError(JOB_ID)
+    return client.post(f"/jobs/{JOB_ID}/film-analysis-rerun", json={}, headers=CAPTCHA_HEADERS)
+
+
+@pytest.fixture
 def delete_response(client):
     return client.delete(f"/jobs/{JOB_ID}")
 
@@ -458,6 +465,13 @@ def test_create_youtube_film_analysis_job_answers_400_on_unknown_preset(unknown_
 def test_rerun_forwards_source_job_and_preset(rerun_response, film_analysis_job_service):
     assert rerun_response.status_code == 201
     film_analysis_job_service.create_rerun_job.assert_called_once_with(JOB_ID, "preset-2")
+
+
+def test_rerun_answers_409_without_compressed_video(rerun_without_compressed_video_response):
+    assert rerun_without_compressed_video_response.status_code == 409
+    assert rerun_without_compressed_video_response.json() == {
+        "detail": f"Job {JOB_ID} has no compressed video to reuse"
+    }
 
 
 def test_rerun_answers_403_when_captcha_is_rejected(

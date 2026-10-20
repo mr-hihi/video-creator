@@ -1,4 +1,5 @@
-from collections.abc import Mapping
+import time
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -8,7 +9,17 @@ from app.modules.ai_models.ai_images import (
     AiImageEncoding,
     to_ai_jpeg_base64,
 )
-from app.modules.ai_models.model_choices import to_ai_name, to_provider_name
+from app.modules.ai_models.gemini_files import (
+    API_KEY_HEADER,
+    FILE_POLL_INTERVAL_SEC,
+    GEMINI_AI_NAME,
+    GEMINI_BASE_URL,
+    FileCall,
+    GeminiFiles,
+    UploadedFile,
+    to_media_word,
+)
+from app.modules.ai_models.model_choices import to_provider_name
 from app.modules.ai_models.streamed_answers import (
     JSON_CONTENT_TYPE,
     AiApiTools,
@@ -20,8 +31,6 @@ from app.modules.ai_models.streamed_answers import (
 )
 from app.modules.providers.provider_catalog import ProviderId
 
-GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
-API_KEY_HEADER = "x-goog-api-key"
 UNKNOWN_REASON = "UNKNOWN"
 BYTES_PER_MB = 1024 * 1024
 MAX_REQUEST_MB = 20
@@ -29,7 +38,8 @@ TOO_LARGE_MESSAGE = (
     "gemini takes at most 20 MB per call; this call is {size_mb:.1f} MB — lower Max frames "
     "or pick another model"
 )
-GEMINI_AI_NAME = to_ai_name(ProviderId.GOOGLE)
+VIDEO_MEDIA_WORD = "video"
+LOW_MEDIA_RESOLUTION = "MEDIA_RESOLUTION_LOW"
 
 
 @dataclass
@@ -56,30 +66,44 @@ class _StreamedAnswer:
 
 
 class GeminiClient:
-    def __init__(self, tools: AiApiTools):
+    def __init__(self, tools: AiApiTools, file_poll_interval_sec: float = FILE_POLL_INTERVAL_SEC):
         self._tools = tools
+        self._files = GeminiFiles(tools.http_client, file_poll_interval_sec)
 
     def ask_for_json(self, model: str, ask: AiAsk, limits: AiLimits) -> dict[str, Any]:
-        return answer_to_json(self._stream_answer(model, ask, limits), GEMINI_AI_NAME)
+        return answer_to_json(self._answer(model, ask, limits), GEMINI_AI_NAME)
 
     def ask_for_text(self, model: str, ask: AiAsk, limits: AiLimits) -> str:
-        return answer_to_text(self._stream_answer(model, ask, limits), GEMINI_AI_NAME)
+        return answer_to_text(self._answer(model, ask, limits), GEMINI_AI_NAME)
 
-    def _stream_answer(self, model: str, ask: AiAsk, limits: AiLimits) -> str:
+    def _answer(self, model: str, ask: AiAsk, limits: AiLimits) -> str:
         api_key = self._tools.find_api_key(ProviderId.GOOGLE)
         if api_key is None:
             raise AiProviderNotSetUpError(to_provider_name(ProviderId.GOOGLE))
-        body = encode_json_body(build_request_body(ask, self._tools.image_encoding))
+        call = FileCall(api_key=api_key, limits=limits, started_at=time.monotonic())
+        uploaded_files: list[UploadedFile] = []
+        try:
+            for media in ask.media:
+                uploaded_files.append(self._files.upload(media, call))
+            body = build_request_body(ask, self._tools.image_encoding, uploaded_files)
+            return self._stream_answer(model, body, call)
+        finally:
+            for uploaded_file in uploaded_files:
+                self._files.delete(uploaded_file.name, api_key)
+
+    def _stream_answer(self, model: str, body_values: Mapping[str, Any], call: FileCall) -> str:
+        body = encode_json_body(body_values)
         ensure_within_request_limit(body)
         answer = _StreamedAnswer()
         request = SseRequest(
             ai_name=GEMINI_AI_NAME,
             url=to_stream_url(model),
             body=body,
-            headers={API_KEY_HEADER: api_key},
-            api_key=api_key,
+            headers={API_KEY_HEADER: call.api_key},
+            api_key=call.api_key,
+            started_at=call.started_at,
         )
-        for chunk in stream_sse_events(self._tools.http_client, request, limits):
+        for chunk in stream_sse_events(self._tools.http_client, request, call.limits):
             answer.add_chunk(chunk)
         return answer.to_text()
 
@@ -94,7 +118,9 @@ def ensure_within_request_limit(body: bytes) -> None:
         raise AiCallError(TOO_LARGE_MESSAGE.format(size_mb=size_mb))
 
 
-def build_request_body(ask: AiAsk, encoding: AiImageEncoding) -> dict[str, Any]:
+def build_request_body(
+    ask: AiAsk, encoding: AiImageEncoding, uploaded_files: Sequence[UploadedFile] = ()
+) -> dict[str, Any]:
     parts: list[dict[str, Any]] = [{"text": ask.message}]
     for image in ask.images:
         parts.append({"text": image.label})
@@ -106,13 +132,26 @@ def build_request_body(ask: AiAsk, encoding: AiImageEncoding) -> dict[str, Any]:
                 }
             }
         )
+    for uploaded_file in uploaded_files:
+        parts.append({"text": uploaded_file.media.label})
+        parts.append(
+            {"fileData": {"mimeType": uploaded_file.media.mime_type, "fileUri": uploaded_file.uri}}
+        )
     body: dict[str, Any] = {
         "systemInstruction": {"parts": [{"text": ask.instructions}]},
         "contents": [{"role": "user", "parts": parts}],
     }
-    if ask.reply_schema is not None:
-        body["generationConfig"] = {
-            "responseMimeType": JSON_CONTENT_TYPE,
-            "responseJsonSchema": ask.reply_schema,
-        }
+    generation_config = build_generation_config(ask, uploaded_files)
+    if generation_config:
+        body["generationConfig"] = generation_config
     return body
+
+
+def build_generation_config(ask: AiAsk, uploaded_files: Sequence[UploadedFile]) -> dict[str, Any]:
+    generation_config: dict[str, Any] = {}
+    if ask.reply_schema is not None:
+        generation_config["responseMimeType"] = JSON_CONTENT_TYPE
+        generation_config["responseJsonSchema"] = ask.reply_schema
+    if any(to_media_word(uploaded.media) == VIDEO_MEDIA_WORD for uploaded in uploaded_files):
+        generation_config["mediaResolution"] = LOW_MEDIA_RESOLUTION
+    return generation_config

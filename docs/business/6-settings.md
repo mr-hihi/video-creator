@@ -27,9 +27,10 @@ A key without a row reads its default.
 |---|---|---|---|
 | `scriptLanguage` | `follow_target_country` \| `vi` \| `ja` \| `ko` \| `zh` \| `en` \| `fr` \| `th` \| `hi` \| `id` | `follow_target_country` | Film Clone (5.3) |
 | `aiModel` | `{ "provider", "model" }` (8.1) | `{ "provider": "claude_cli", "model": "default" }` | every AI step whose group has no model of its own (8.1) |
-| `aiStepModels` | `{ "moments", "filmAnalysis", "filmScript", "filmClone" }`, each `null` or `{ "provider", "model" }` (8.1) | every group `null` | the AI steps of each group (8.1) |
-| `inputMode` | `subtitles` \| `whole_video` | `subtitles` | `picking_moments` of Video to Markdown and Film Analysis jobs (8.3) |
-| `filmCloneInputMode` | `subtitles` \| `whole_video` | `subtitles` | `picking_moments` of the stage 1 job of a film clone (5.1, 8.3) |
+| `aiStepModels` | `{ "moments", "audio", "filmAnalysis", "filmScript", "filmClone" }`, each `null` or `{ "provider", "model" }` (8.1) | every group `null` | the AI steps of each group (8.1) |
+| `inputMode` | `subtitles` \| `whole_video` | `subtitles` | Video to Markdown jobs (8.3) |
+| `filmAnalysisInputMode` | `subtitles` \| `whole_video` \| `full_video` | `subtitles` | Film Analysis jobs (3.1, 8.3) |
+| `filmCloneInputMode` | `subtitles` \| `whole_video` | `subtitles` | the stage 1 job of a film clone (5.1, 8.3) |
 | `filmCloneImageProvider` | `null` \| `google_flow` \| `google` \| `fal` \| `replicate` \| `openai` \| `sd_webui` | `null` | every `image` and `edit_image` request of Film Clone (5.3, 5.4); `null` → the `image` route (7.2) |
 | `filmStudioImageProvider` | as `filmCloneImageProvider` | `null` | every `image` and `edit_image` request of Film Studio (4 § Media providers); `null` → the `image` route (7.2) |
 | `filmStudioClipProvider` | `null` \| `google_flow` \| `google` \| `fal` \| `replicate` | `null` | every `video` request of Film Studio (4 § Media providers); `null` → the `video` route (7.2) |
@@ -48,7 +49,8 @@ A key without a row reads its default.
   afterwards, pending runs included (8.1); a change of `filmCloneImageProvider`, `filmStudioImageProvider`
   or `filmStudioClipProvider`, or of the route it follows, applies to every request created afterwards, while
   a queued request keeps the provider it was given (4.3).
-- A model whose provider is not set up saves; creating a run that needs it then answers 409 (8.1).
+- A model whose provider is not set up, or a model of another provider for a group that needs Google AI,
+  saves; creating a run that needs it then answers 409 (8.1).
 - An image or clip provider that is not set up saves; its requests fail at submit (7.1).
 
 ## 6.2 Screen `/settings`
@@ -70,7 +72,7 @@ Header menu as in 1.7; every `/settings…` page highlights `Settings`. Tabs, in
 
 | Element | Detail |
 |---|---|
-| Group `Text` | `All steps`, `Apply to all steps`, one row per step group and `Input mode` (8.4) |
+| Group `Text` | `All steps`, `Apply to all steps`, one row per step group, `Video to Markdown input` and `Film Analysis input` (8.4) |
 | Groups `Images`, `Clips`, `Speech`, `Music` | the provider of the group's route and the models of its providers (7.4) |
 | `Save` | saves every group with one `PATCH /settings/ai-models`, all or none; enabled with unsaved changes; notice `Saved` |
 
@@ -79,7 +81,7 @@ Header menu as in 1.7; every `/settings…` page highlights `Settings`. Tabs, in
 | Element | Detail |
 |---|---|
 | `Images with` | `Same as AI models ({provider name})` (default), then `Google Flow`, `Google AI`, `fal.ai`, `Replicate`, `OpenAI`, `Stable Diffusion WebUI / Forge`; hint `Makes the asset references and scene images of Film Clone.` |
-| `Input mode` | `Subtitles` (default) \| `Whole video`; hint `Subtitles: the model reads the transcript to pick key moments. Whole video: it also sees one frame per second — slower, with more calls on long videos.` |
+| `Input mode` | `Subtitles` (default) \| `Frame image + audio`; hint `Subtitles: the model reads the transcript to pick key moments. Frame image + audio: it also sees one frame per second, and Gemini hears who speaks and the sounds — slower, with more calls on long videos.` Under it, the Google AI warning of 8.4 when the `Audio` model saved is not a Google AI one |
 | `Save` | `PATCH /settings`; enabled with unsaved changes; notice `Saved` |
 
 **Tab "Film Studio"**
@@ -105,9 +107,9 @@ Header menu as in 1.7; every `/settings…` page highlights `Settings`. Tabs, in
 Same JSON and error conventions as domain 1.
 
 ```
-GET   /settings            — { "scriptLanguage", "aiModel", "aiStepModels", "inputMode", "filmCloneInputMode", "filmCloneImageProvider", "filmStudioImageProvider", "filmStudioClipProvider" } — every key, with its default when it has no row
+GET   /settings            — { "scriptLanguage", "aiModel", "aiStepModels", "inputMode", "filmAnalysisInputMode", "filmCloneInputMode", "filmCloneImageProvider", "filmStudioImageProvider", "filmStudioClipProvider" } — every key, with its default when it has no row
 PATCH /settings            — { key: value, … } → the same shape as GET
-PATCH /settings/ai-models  — { "aiModel"?, "aiStepModels"?, "inputMode"?, "routes"?: { "image"?, "video"?, "speech"?, "music"? }, "models"?: { "{provider id}": { "{media kind}": "{model id}" } } } → { "settings": the shape of GET /settings, "providers": the shape of GET /settings/providers (7) }
+PATCH /settings/ai-models  — { "aiModel"?, "aiStepModels"?, "inputMode"?, "filmAnalysisInputMode"?, "routes"?: { "image"?, "video"?, "speech"?, "music"? }, "models"?: { "{provider id}": { "{media kind}": "{model id}" } } } → { "settings": the shape of GET /settings, "providers": the shape of GET /settings/providers (7) }
 ```
 
 `PATCH /settings/ai-models` checks every part before it saves any: the settings by 6.1 and 8.1, the routes by

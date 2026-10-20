@@ -12,15 +12,18 @@ from app.main import create_app
 from app.modules.ai_models.ai_caller import AiCaller, AiClient
 from app.modules.ai_models.ai_calls import (
     AiAsk,
+    AiCallError,
     AiLimits,
     AiModelChoice,
     AiProviderNotSetUpError,
     AiStepGroup,
+    GoogleModelRequiredError,
     InputMode,
 )
 from app.modules.ai_models.ai_images import AiImageEncoding, to_ai_jpeg_base64
 from app.modules.ai_models.model_choices import (
     to_ai_name,
+    to_group_label,
     to_model_choice,
     to_model_label,
     to_provider_name,
@@ -110,6 +113,73 @@ def not_set_up_error():
     with pytest.raises(AiProviderNotSetUpError) as caught:
         rig.models.ensure_set_up((AiStepGroup.MOMENTS, AiStepGroup.FILM_ANALYSIS))
     return caught.value
+
+
+def capture_google_check_error(step_choice: AiModelChoice, set_up_providers: set[ProviderId]):
+    rig = build_step_models(step_choice, set_up_providers)
+    with pytest.raises(AiCallError) as caught:
+        rig.models.ensure_set_up(
+            (AiStepGroup.MOMENTS, AiStepGroup.FILM_ANALYSIS), (AiStepGroup.FILM_ANALYSIS,)
+        )
+    return caught.value
+
+
+@pytest.fixture
+def google_group_on_another_provider_error():
+    return capture_google_check_error(GPT_LUNA, {ProviderId.CLAUDE_CLI, ProviderId.OPENAI})
+
+
+@pytest.fixture
+def google_group_not_set_up_error():
+    return capture_google_check_error(GEMINI_ARGON, {ProviderId.CLAUDE_CLI})
+
+
+@pytest.fixture
+def checked_google_groups():
+    rig = build_step_models(GEMINI_ARGON, {ProviderId.CLAUDE_CLI, ProviderId.GOOGLE})
+    rig.models.ensure_set_up(
+        (AiStepGroup.MOMENTS, AiStepGroup.FILM_ANALYSIS), (AiStepGroup.FILM_ANALYSIS,)
+    )
+    return rig.is_set_up
+
+
+@pytest.fixture
+def found_google_model():
+    return build_step_models(GEMINI_ARGON, set()).models.find_google_model(
+        AiStepGroup.FILM_ANALYSIS
+    )
+
+
+@pytest.fixture
+def google_model_refusal():
+    with pytest.raises(GoogleModelRequiredError) as caught:
+        build_step_models(GEMINI_ARGON, set()).models.find_google_model(AiStepGroup.AUDIO)
+    return caught.value
+
+
+@pytest.fixture
+def caller_google_model():
+    step_models = MagicMock(spec=AiStepModels)
+    step_models.find_google_model.return_value = GEMINI_ARGON
+    caller = AiCaller({}, step_models)
+    return SimpleNamespace(
+        model=caller.find_google_model(AiStepGroup.AUDIO), step_models=step_models
+    )
+
+
+@pytest.fixture
+def refused_google_upload_response():
+    job_service = MagicMock(spec=JobService)
+    job_service.create_video_to_markdown_job.side_effect = GoogleModelRequiredError("Audio")
+    captcha_service = MagicMock(spec=CaptchaService)
+    captcha_service.verify.return_value = True
+    app = create_app()
+    app.state.container = SimpleNamespace(job_service=job_service, captcha_service=captcha_service)
+    return TestClient(app).post(
+        "/jobs/video-to-markdown",
+        files={"file": ("clip.mp4", b"video", "video/mp4")},
+        headers={"X-Captcha-Token": "token-1"},
+    )
 
 
 @pytest.fixture
@@ -203,6 +273,7 @@ def test_step_models_read_a_missing_group_as_null(step_model_choices_outcome):
 def test_step_models_are_stored_with_every_group():
     assert to_step_models_value({**NO_STEP_MODELS, AiStepGroup.MOMENTS: GPT_LUNA}) == {
         "moments": {"provider": "openai", "model": "gpt-6-luna"},
+        "audio": None,
         "filmAnalysis": None,
         "filmScript": None,
         "filmClone": None,
@@ -233,6 +304,7 @@ def test_each_provider_has_an_ai_name_for_messages():
 def test_a_group_without_its_own_model_uses_the_model_of_all_steps(found_models):
     assert found_models == {
         AiStepGroup.MOMENTS: CLI_DEFAULT,
+        AiStepGroup.AUDIO: CLI_DEFAULT,
         AiStepGroup.FILM_ANALYSIS: GEMINI_ARGON,
         AiStepGroup.FILM_SCRIPT: CLI_DEFAULT,
         AiStepGroup.FILM_CLONE: CLI_DEFAULT,
@@ -248,6 +320,63 @@ def test_set_up_providers_pass_the_creation_check(checked_set_up_groups):
 
 def test_a_group_whose_provider_is_not_set_up_names_the_provider(not_set_up_error):
     assert str(not_set_up_error) == "Google AI (Gemini, Veo) is not set up — open Settings"
+
+
+def test_a_google_group_on_another_provider_is_refused_with_its_label(
+    google_group_on_another_provider_error,
+):
+    assert isinstance(google_group_on_another_provider_error, GoogleModelRequiredError)
+    assert (
+        str(google_group_on_another_provider_error)
+        == "Film analysis needs a Google AI model — open Settings"
+    )
+
+
+def test_a_google_group_whose_key_is_missing_names_the_provider(google_group_not_set_up_error):
+    assert isinstance(google_group_not_set_up_error, AiProviderNotSetUpError)
+    assert (
+        str(google_group_not_set_up_error)
+        == "Google AI (Gemini, Veo) is not set up — open Settings"
+    )
+
+
+def test_a_google_group_with_a_set_up_google_model_passes(checked_google_groups):
+    assert [call.args[0] for call in checked_google_groups.call_args_list] == [
+        ProviderId.CLAUDE_CLI,
+        ProviderId.GOOGLE,
+    ]
+
+
+def test_find_google_model_returns_a_google_model(found_google_model):
+    assert found_google_model == GEMINI_ARGON
+
+
+def test_find_google_model_refuses_another_provider(google_model_refusal):
+    assert str(google_model_refusal) == "Audio needs a Google AI model — open Settings"
+
+
+def test_the_ai_caller_reads_the_google_model_of_a_group(caller_google_model):
+    assert caller_google_model.model == GEMINI_ARGON
+    caller_google_model.step_models.find_google_model.assert_called_once_with(AiStepGroup.AUDIO)
+
+
+def test_every_group_has_a_screen_label():
+    assert [to_group_label(group) for group in AiStepGroup] == [
+        "Key moments",
+        "Audio",
+        "Film analysis",
+        "Film script",
+        "Film clone",
+    ]
+
+
+def test_a_creation_refused_for_want_of_a_google_model_answers_409(
+    refused_google_upload_response,
+):
+    assert refused_google_upload_response.status_code == 409
+    assert refused_google_upload_response.json() == {
+        "detail": "Audio needs a Google AI model — open Settings"
+    }
 
 
 def test_the_ai_caller_reads_the_step_model(ai_caller_calls):
@@ -295,7 +424,11 @@ def test_a_refused_creation_answers_409(refused_upload_response):
 
 @pytest.mark.parametrize(
     ("options", "expected"),
-    [({}, InputMode.SUBTITLES), ({"inputMode": "whole_video"}, InputMode.WHOLE_VIDEO)],
+    [
+        ({}, InputMode.SUBTITLES),
+        ({"inputMode": "whole_video"}, InputMode.WHOLE_VIDEO),
+        ({"inputMode": "full_video"}, InputMode.FULL_VIDEO),
+    ],
 )
 def test_a_job_without_an_input_mode_uses_subtitles(options, expected):
     assert get_job_input_mode(options) == expected

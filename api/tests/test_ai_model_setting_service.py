@@ -35,7 +35,13 @@ DEFAULT_ROUTES = {
     "speech": "omnivoice",
     "music": "ace_step",
 }
-NO_STEP_MODELS = {"moments": None, "filmAnalysis": None, "filmScript": None, "filmClone": None}
+NO_STEP_MODELS = {
+    "moments": None,
+    "audio": None,
+    "filmAnalysis": None,
+    "filmScript": None,
+    "filmClone": None,
+}
 
 
 def build_provider_service(
@@ -106,7 +112,11 @@ def saved_settings():
     parts = build_parts()
     view = parts.service.update_ai_model_settings(
         build_update(
-            {"aiModel": GEMINI_FLASH, "aiStepModels": {"moments": GEMINI_ARGON}},
+            {
+                "aiModel": GEMINI_FLASH,
+                "aiStepModels": {"moments": GEMINI_ARGON, "audio": GEMINI_FLASH},
+                "filmAnalysisInputMode": "full_video",
+            },
             {"image": "sd_webui", "video": "replicate"},
             {"replicate": {"video": "alibaba/wan-3"}, "google_flow": {"image": "NARWHAL"}},
         )
@@ -134,6 +144,14 @@ def saved_settings():
             "Invalid value for 'aiStepModels'",
         ),
         (
+            {"setting_values": {"filmAnalysisInputMode": "frames"}},
+            "Invalid value for 'filmAnalysisInputMode'",
+        ),
+        (
+            {"setting_values": {"inputMode": "full_video"}},
+            "Invalid value for 'inputMode'",
+        ),
+        (
             {
                 "setting_values": {"inputMode": "frames"},
                 "routes": {"image": "fal"},
@@ -159,6 +177,13 @@ def rejected_settings(request):
             {
                 "setting_values": {"inputMode": "whole_video"},
                 "routes": {"image": "fal", "video": "openai"},
+            },
+            "OpenAI cannot serve video",
+        ),
+        (
+            {
+                "setting_values": {"filmAnalysisInputMode": "full_video"},
+                "routes": {"video": "openai"},
             },
             "OpenAI cannot serve video",
         ),
@@ -212,7 +237,12 @@ def test_ai_model_settings_are_saved_together(saved_settings):
         AiModelSettingsSave(
             setting_values={
                 "aiModel": GEMINI_FLASH,
-                "aiStepModels": {**NO_STEP_MODELS, "moments": GEMINI_ARGON},
+                "aiStepModels": {
+                    **NO_STEP_MODELS,
+                    "moments": GEMINI_ARGON,
+                    "audio": GEMINI_FLASH,
+                },
+                "filmAnalysisInputMode": "full_video",
             },
             provider_ids_by_route={"image": "sd_webui", "video": "replicate"},
             models_by_provider_id={
@@ -226,6 +256,7 @@ def test_ai_model_settings_are_saved_together(saved_settings):
 def test_the_answer_holds_the_saved_settings_and_providers(saved_settings):
     assert saved_settings.view.settings["aiModel"] == GEMINI_FLASH
     assert saved_settings.view.settings["inputMode"] == "subtitles"
+    assert saved_settings.view.settings["filmAnalysisInputMode"] == "full_video"
     assert saved_settings.view.providers.provider_ids_by_route == {
         **DEFAULT_ROUTES,
         "image": "sd_webui",

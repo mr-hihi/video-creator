@@ -12,6 +12,9 @@ Test cases for [business/5-film-clone.md](../business/5-film-clone.md). Acronym 
 - **Fake provider** and *(real provider)*: as in
   [4-film-studio.md § Test environment](./4-film-studio.md#test-environment).
 - `Script language` setting (domain 6) at its default `Follow target country` unless a case says otherwise.
+- `Frame image + audio` cases run against the mock AI of `tools/mock-ai`, which must answer the Gemini Files API
+  and the `speakersAndSounds` schema, with the fake key `AIza-test-0000000000wxyz` saved on the `google`
+  provider and `aiStepModels.audio` = `{"provider":"google","model":"gemini-3.8-flash"}`.
 - Reference data, created before the cases that name it:
 
 | Id | How it is made |
@@ -40,8 +43,8 @@ Test cases for [business/5-film-clone.md](../business/5-film-clone.md). Acronym 
   - `Video notes` shows frames under `##` headings, with `Copy`
   - `Assets` shows the groups `Characters`, `Costumes`, `Props`, `Locations` with ≥ 1 card; each card has a name, a culture, a period and `{n} frames`
   - `Shots` has one row per frame — as many as `Frames` in the summary, at most 20 — in time order; each row shows a badge `Dialogue` or `Scene change` and a shot size and camera angle label or `—`
-  - `Prompts used` lists five prompts: Video → Markdown, Clone assets, Clone shots, Clone localization, Clone script
-  - `GET C/{id}` → `status` = `waiting`, `step` = `choosing_localization`, `aspect` = `16:9`, `sourceKind` = `upload`; `job.type` = `film_clone`, `job.options.maxFrames` = 20, `job.options.prompts` has `videoToMarkdown`, `cloneAssets`, `cloneShots`; `prompts` has `cloneLocalization`, `cloneScript`
+  - `Prompts used` lists six prompts: Video → Markdown, Speakers & sounds, Clone assets, Clone shots, Clone localization, Clone script
+  - `GET C/{id}` → `status` = `waiting`, `step` = `choosing_localization`, `aspect` = `16:9`, `sourceKind` = `upload`; `job.type` = `film_clone`, `job.options.maxFrames` = 20, `job.options.prompts` has `videoToMarkdown`, `speakersAndSounds`, `cloneAssets`, `cloneShots`; `prompts` has `cloneLocalization`, `cloneScript`
   - `api/storage-test/{job id}/output/` holds `images/` only
 
 ### TC-FC-02: YouTube link, up to the localization choices
@@ -142,7 +145,7 @@ Test cases for [business/5-film-clone.md](../business/5-film-clone.md). Acronym 
 
 ### TC-FC-39: The stage 1 job copies the Film Clone input mode
 - **App:** Frontend + API
-- **Precondition:** Network up.
+- **Precondition:** Network up; mock AI, `google` key and `aiStepModels.audio` as in § Test environment.
 - **Steps:**
   1. `curl -s -X PATCH http://localhost:5070/settings -H 'Content-Type: application/json' -d '{"inputMode":"subtitles","filmCloneInputMode":"whole_video"}'`
   2. `curl -i -X POST C/youtube -H 'Content-Type: application/json' -d '{"url":"https://www.youtube.com/watch?v=vfjegxHDOwI","language":"auto","maxFrames":20}'`
@@ -153,7 +156,24 @@ Test cases for [business/5-film-clone.md](../business/5-film-clone.md). Acronym 
   - Step 2: `HTTP 201`; `GET C/{id}` → `job.options.inputMode` = `whole_video`
   - Step 3: `options.inputMode` = `subtitles`
   - Step 4: `job.options.inputMode` is still `whole_video`
-  - Step 5: summary `Input` = `Whole video`; while analyzing, the job steps show `Fetching YouTube transcript`, `Downloading video`, `Sampling frames`, `Picking key moments`, `Detecting scene changes`, `Capturing frames`, `Writing Markdown` in that order
+  - Step 5: summary `Input` = `Frame image + audio`; while analyzing, the job steps show `Fetching YouTube transcript`, `Downloading video`, `Listening to the audio`, `Sampling frames`, `Picking key moments`, `Detecting scene changes`, `Capturing frames`, `Writing Markdown` in that order
+
+### TC-FC-47: Frame image + audio — speakers and sound shots
+- **App:** Frontend + API
+- **Precondition:** Mock AI, `google` key and `aiStepModels.audio` as in § Test environment; the mock answers
+  `listening_to_audio` with two speakers and three sounds spread over F1; `PATCH /settings`
+  `{"filmCloneInputMode":"whole_video"}`.
+- **Steps:**
+  1. Navigate to http://localhost:5071/film-clone; drop F1 on `Film`; fill `Max frames` with `20`
+  2. *(captcha on)* Wait for the captcha; click `Clone`
+  3. Wait until `Localization` is `waiting`; open the tabs `Video notes` and `Shots`
+  4. `curl -s C/{id}`
+- **Expected:**
+  - Step 1: `Max frames` shown; the line reads `AI: Key moments — Claude (CLI default) · Audio — Gemini 3.8 Flash · Film clone — Claude (CLI default) · Input: Frame image + audio`
+  - Step 3: job steps `Extracting audio`, `Transcribing speech`, `Listening to the audio`, `Sampling frames`, `Picking key moments`, `Detecting scene changes`, `Capturing frames`, `Writing Markdown`; summary `Frames` = `{d} dialogue + {s} sounds + {c} scene changes`, d + s + c ≤ 20, s ≥ 1
+  - `Video notes` starts with `Speakers:` listing the two speakers and has `**{name}:**` lines; each sound frame heads `## {mm:ss} — {Kind}: {description}`
+  - `Shots` shows a `Sound` badge on as many rows as `{s}`, next to `Dialogue` and `Scene change` rows
+  - Step 4: `shots[].frameKind` takes `dialogue`, `sound` and `scene`; `job.aiUsed` has `listening_to_audio` = Gemini 3.8 Flash and `picking_moments` = Claude (CLI default)
 
 ## Localization
 

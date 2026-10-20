@@ -32,6 +32,7 @@ class SseRequest:
     body: bytes
     headers: Mapping[str, str]
     api_key: str
+    started_at: float | None = None
 
 
 def stream_sse_events(
@@ -49,7 +50,7 @@ def stream_sse_events(
 def _read_sse_events(
     http_client: httpx.Client, request: SseRequest, limits: AiLimits
 ) -> Iterator[dict[str, Any]]:
-    started_at = time.monotonic()
+    started_at = time.monotonic() if request.started_at is None else request.started_at
     with http_client.stream(
         "POST",
         request.url,

@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -101,6 +102,21 @@ def video_command(runner, downloaded_video_path):
 
 
 @pytest.fixture
+def video_with_audio_download(runner, downloader, tmp_path):
+    runner.run.side_effect = write_file_named("source.mp4", "video")
+    path = downloader.download_video_with_audio(VIDEO_URL, tmp_path / "source.mp4")
+    return SimpleNamespace(path=path, command=runner.run.call_args.args[0])
+
+
+@pytest.fixture
+def missing_video_with_audio_error(runner, downloader, tmp_path):
+    runner.run.return_value = ""
+    return capture_command_error(
+        lambda: downloader.download_video_with_audio(VIDEO_URL, tmp_path / "source.mp4")
+    )
+
+
+@pytest.fixture
 def missing_video_error(runner, downloader, tmp_path):
     runner.run.return_value = ""
     return capture_command_error(
@@ -177,3 +193,28 @@ def test_download_video_fetches_the_video_stream_as_mp4(video_command, tmp_path)
 
 def test_download_video_raises_when_no_file_is_written(missing_video_error):
     assert str(missing_video_error) == "yt-dlp wrote no video file at source.mp4"
+
+
+def test_download_video_with_audio_merges_both_streams_into_mp4(
+    video_with_audio_download, tmp_path
+):
+    assert video_with_audio_download.path == tmp_path / "source.mp4"
+    assert video_with_audio_download.command.args == [
+        *COMMON_ARGS,
+        "-f",
+        "bv*+ba/b",
+        "-S",
+        "res:720,vcodec:h264,acodec:aac",
+        "--merge-output-format",
+        "mp4",
+        "--remux-video",
+        "mp4",
+        "--no-progress",
+        "-o",
+        str(tmp_path / "source.%(ext)s"),
+        VIDEO_URL,
+    ]
+
+
+def test_download_video_with_audio_raises_when_no_file_is_written(missing_video_with_audio_error):
+    assert str(missing_video_with_audio_error) == "yt-dlp wrote no video file at source.mp4"

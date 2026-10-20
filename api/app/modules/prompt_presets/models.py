@@ -44,6 +44,7 @@ class PromptPresetVersion(Base):
     change: Mapped[PresetChange] = mapped_column(build_string_enum_type(PresetChange, 16))
     change_source: Mapped[str | None] = mapped_column(String(120), nullable=True)
     video_to_markdown: Mapped[str] = mapped_column(LONG_TEXT_TYPE)
+    speakers_and_sounds: Mapped[str | None] = mapped_column(LONG_TEXT_TYPE, nullable=True)
     character_image: Mapped[str] = mapped_column(LONG_TEXT_TYPE)
     character_voice: Mapped[str] = mapped_column(LONG_TEXT_TYPE)
     scene: Mapped[str] = mapped_column(LONG_TEXT_TYPE)

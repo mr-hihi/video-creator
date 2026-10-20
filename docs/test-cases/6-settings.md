@@ -25,7 +25,7 @@ Test cases for [business/6-settings.md](../business/6-settings.md). Acronym `ST`
   - Step 1: tabs `General` · `AI models` · `Prompt override` · `Film Clone` · `Film Studio`, `General` open; `Script language` = `Follow the target country` with the hint `The language Film Clone writes scripts in. Film Studio narrates only Vietnamese, English or Japanese.`; `Save` is disabled; below it the panel `Providers` with its first sub-tab `Google Flow` selected (7.4); no `AI models`, `Input mode`, `Images with` or `Clips with` field on this tab
   - Step 2: notice `Saved`; `Save` is disabled again
   - Step 3: `Script language` = `Japanese`
-  - Step 4: `{"scriptLanguage":"ja","aiModel":{"provider":"claude_cli","model":"default"},"aiStepModels":{"moments":null,"filmAnalysis":null,"filmScript":null,"filmClone":null},"inputMode":"subtitles","filmCloneInputMode":"subtitles","filmCloneImageProvider":null,"filmStudioImageProvider":null,"filmStudioClipProvider":null}`
+  - Step 4: `{"scriptLanguage":"ja","aiModel":{"provider":"claude_cli","model":"default"},"aiStepModels":{"moments":null,"audio":null,"filmAnalysis":null,"filmScript":null,"filmClone":null},"inputMode":"subtitles","filmAnalysisInputMode":"subtitles","filmCloneInputMode":"subtitles","filmCloneImageProvider":null,"filmStudioImageProvider":null,"filmStudioClipProvider":null}`
 
 ### TC-ST-02: Validation
 - **App:** API
@@ -44,7 +44,7 @@ Test cases for [business/6-settings.md](../business/6-settings.md). Acronym `ST`
   2. `HTTP 400`, `detail` = `Invalid value for 'scriptLanguage'`
   3. `HTTP 422`
   4. `HTTP 400`, `detail` = `Unknown setting 'theme'`; `scriptLanguage` is not changed
-  5. `{"scriptLanguage":"follow_target_country","aiModel":{"provider":"claude_cli","model":"default"},"aiStepModels":{"moments":null,"filmAnalysis":null,"filmScript":null,"filmClone":null},"inputMode":"subtitles","filmCloneInputMode":"subtitles","filmCloneImageProvider":null,"filmStudioImageProvider":null,"filmStudioClipProvider":null}`
+  5. `{"scriptLanguage":"follow_target_country","aiModel":{"provider":"claude_cli","model":"default"},"aiStepModels":{"moments":null,"audio":null,"filmAnalysis":null,"filmScript":null,"filmClone":null},"inputMode":"subtitles","filmAnalysisInputMode":"subtitles","filmCloneInputMode":"subtitles","filmCloneImageProvider":null,"filmStudioImageProvider":null,"filmStudioClipProvider":null}`
   6. `HTTP 400`, `detail` = `Invalid value for 'filmCloneImageProvider'`
   7. `HTTP 400`, `detail` = `Invalid value for 'filmStudioClipProvider'` — Stable Diffusion WebUI makes images only
   8. `HTTP 400`, `detail` = `Invalid value for 'filmCloneInputMode'`
@@ -106,7 +106,7 @@ Test cases for [business/6-settings.md](../business/6-settings.md). Acronym `ST`
 - **Steps:**
   1. Navigate to http://localhost:5071/settings?tab=film-clone
   2. Select `OpenAI` from `Images with`
-  3. Select `Google Flow` from `Images with` and `Whole video` from `Input mode`; click `Save`
+  3. Select `Google Flow` from `Images with` and `Frame image + audio` from `Input mode`; click `Save`
   4. `curl -s S`
   5. Navigate to `/film-clone`
   6. Navigate to `/`
@@ -114,17 +114,20 @@ Test cases for [business/6-settings.md](../business/6-settings.md). Acronym `ST`
      `/settings?tab=film-clone`; select the first option of `Images with`
 - **Expected:**
   - Step 1: `Images with` = `Same as AI models (Google Flow)` with the hint `Makes the asset references and scene
-    images of Film Clone.`; `Input mode` = `Subtitles` with the hint `Subtitles: the model reads the transcript
-    to pick key moments. Whole video: it also sees one frame per second — slower, with more calls on long
-    videos.`; `Save` is disabled
+    images of Film Clone.`; `Input mode` = `Subtitles` (options `Subtitles`, `Frame image + audio`) with the
+    hint `Subtitles: the model reads the transcript to pick key moments. Frame image + audio: it also sees one
+    frame per second, and Gemini hears who speaks and the sounds — slower, with more calls on long videos.`;
+    `Save` is disabled
   - Step 2: warning `OpenAI is not set up — set it up in General.`, `General` linking to
     `/settings?tab=general&provider=openai`
-  - Step 3: notice `Saved`; no warning
+  - Step 3: notice `Saved`; no provider warning; under `Input mode` the warning `Frame image + audio needs a
+    Google AI model here.` — the `Audio` model is still Claude (CLI default)
   - Step 4: `"filmCloneImageProvider":"google_flow","filmCloneInputMode":"whole_video"`, while
-    `"inputMode":"subtitles"` and `"filmStudioImageProvider":null`
-  - Step 5: the `New clone` panel reads `AI: Claude (CLI default) · Input: Whole video`, `Change` after `AI` →
+    `"inputMode":"subtitles"`, `"filmAnalysisInputMode":"subtitles"` and `"filmStudioImageProvider":null`
+  - Step 5: the `New clone` panel reads `AI: Key moments — Claude (CLI default) · Audio — Claude (CLI default) —
+    needs Google AI · Film clone — Claude (CLI default) · Input: Frame image + audio`, `Change` after `AI` →
     `/settings?tab=ai-models`, `Change` after `Input` → `/settings?tab=film-clone`; the line `Images with: Google
-    Flow`
+    Flow`; `Clone` is disabled
   - Step 6: the `New conversion` panel reads `AI: Claude (CLI default) · Input: Subtitles`
   - Step 7: on the reloaded tab `Images with` still reads `Google Flow` and its first option reads `Same as AI
     models (fal.ai)`; after selecting it, warning `fal.ai is not set up — set it up in General.`
@@ -153,6 +156,8 @@ Test cases for [business/6-settings.md](../business/6-settings.md). Acronym `ST`
   5. `PATCH AM` `{"routes":{"apiImage":"google"}}`
   6. `PATCH AM` `["whole_video"]`
   7. `PATCH AM` `{"inputMode":"whole_video","routes":{"image":"sd_webui","video":"replicate"}}`
+  8. `PATCH AM` `{"filmAnalysisInputMode":"full_video","routes":{"video":"openai"}}`
+  9. `PATCH AM` `{"filmAnalysisInputMode":"full_video"}`
 - **Expected:**
   1. `HTTP 400`, `detail` = `OpenAI cannot serve video`
   2. `inputMode` = `subtitles`; `routes` = `{"image":"google_flow","video":"google_flow","speech":"omnivoice","music":"ace_step"}`
@@ -161,3 +166,5 @@ Test cases for [business/6-settings.md](../business/6-settings.md). Acronym `ST`
   5. `HTTP 400`, `detail` = `Unknown route 'apiImage'`
   6. `HTTP 422`
   7. `HTTP 200`; `settings.inputMode` = `whole_video`; `providers.routes` = `{"image":"sd_webui","video":"replicate","speech":"omnivoice","music":"ace_step"}`
+  8. `HTTP 400`, `detail` = `OpenAI cannot serve video`; `filmAnalysisInputMode` still `subtitles`
+  9. `HTTP 200`; `settings.filmAnalysisInputMode` = `full_video`, `settings.inputMode` still `whole_video`

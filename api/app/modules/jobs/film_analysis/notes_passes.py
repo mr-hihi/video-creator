@@ -2,14 +2,21 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
+from app.modules.jobs.film_analysis.frames import FrameKind
 from app.modules.jobs.models import Job, JobStep
 from app.modules.jobs.video_to_markdown.markdown import CapturedMoment
 
 
 @dataclass(frozen=True)
+class CapturedFilmFrame:
+    captured_moment: CapturedMoment
+    kind: FrameKind
+
+
+@dataclass(frozen=True)
 class WrittenNotes:
     video_notes: str
-    captured_moments: Sequence[CapturedMoment]
+    captured_frames: Sequence[CapturedFilmFrame]
 
 
 class NotesPasses(Protocol):

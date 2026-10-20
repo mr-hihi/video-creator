@@ -1,9 +1,15 @@
 from io import BytesIO
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
-from app.modules.ai_models.ai_calls import AiStepGroup, InputMode
+from app.modules.ai_models.ai_calls import (
+    AiModelChoice,
+    AiStepGroup,
+    GoogleModelRequiredError,
+    InputMode,
+)
 from app.modules.ai_models.step_models import AiStepModels
 from app.modules.app_settings.service import AppSettingService
 from app.modules.jobs.errors import (
@@ -13,6 +19,7 @@ from app.modules.jobs.errors import (
     JobNotFoundError,
     JobPresetNotFoundError,
     JobStillRunningError,
+    NoCompressedVideoError,
     NotFilmAnalysisJobError,
     NoVideoNotesError,
 )
@@ -25,6 +32,7 @@ from app.modules.jobs.storage import JobStorage
 from app.modules.prompt_presets.errors import PromptPresetNotFoundError
 from app.modules.prompt_presets.prompt_texts import DEFAULT_PRESET_PROMPTS
 from app.modules.prompt_presets.service import PresetSnapshot, PromptPresetService
+from app.modules.providers.provider_catalog import ProviderId
 
 SOURCE_JOB_ID = "source-1"
 PRESET_SNAPSHOT = PresetSnapshot(
@@ -44,6 +52,17 @@ SOURCE_OPTIONS = {
 }
 
 
+FULL_VIDEO_SOURCE_OPTIONS = {
+    "url": "https://www.youtube.com/watch?v=vfjegxHDOwI",
+    "videoId": "vfjegxHDOwI",
+    "language": "vi",
+    "captionKind": "auto",
+    "preset": {"id": "preset-1", "name": "Default", "version": 1},
+    "prompts": {"scene": "Old scene prompt"},
+    "inputMode": "full_video",
+}
+
+
 def build_source_job(job_type: JobType, job_status: JobStatus) -> Job:
     return Job(
         id=SOURCE_JOB_ID,
@@ -51,6 +70,16 @@ def build_source_job(job_type: JobType, job_status: JobStatus) -> Job:
         status=job_status,
         source_filename="Phim [vfjegxHDOwI].mp4",
         options=dict(SOURCE_OPTIONS),
+    )
+
+
+def build_full_video_source_job(job_status: JobStatus) -> Job:
+    return Job(
+        id=SOURCE_JOB_ID,
+        type=JobType.YOUTUBE_FILM_ANALYSIS,
+        status=job_status,
+        source_filename="Phim [vfjegxHDOwI].mp4",
+        options=dict(FULL_VIDEO_SOURCE_OPTIONS),
     )
 
 
@@ -82,6 +111,9 @@ def storage(tmp_path):
     job_storage = JobStorage(tmp_path, max_upload_bytes=1024)
     job_storage.images_dir(SOURCE_JOB_ID).mkdir(parents=True)
     (job_storage.images_dir(SOURCE_JOB_ID) / "moment-01-00m00s.jpg").write_bytes(b"jpg")
+    job_storage.compressed_dir(SOURCE_JOB_ID).mkdir(parents=True)
+    (job_storage.compressed_dir(SOURCE_JOB_ID) / "part-01.mp4").write_bytes(b"part-1")
+    (job_storage.compressed_dir(SOURCE_JOB_ID) / "part-02.mp4").write_bytes(b"part-2")
     return job_storage
 
 
@@ -100,7 +132,8 @@ def notify_worker():
 @pytest.fixture
 def settings_service():
     service = MagicMock(spec=AppSettingService)
-    service.get_input_mode.return_value = InputMode.WHOLE_VIDEO
+    service.get_input_mode.return_value = InputMode.SUBTITLES
+    service.get_film_analysis_input_mode.return_value = InputMode.WHOLE_VIDEO
     service.get_film_clone_input_mode.return_value = InputMode.SUBTITLES
     return service
 
@@ -118,6 +151,51 @@ def service(repository, storage, preset_service, settings_service, step_models, 
     return FilmAnalysisJobService(repository, storage, JobIntake(intake_tools))
 
 
+def build_service_on_claude(repository, storage, preset_service, settings_service):
+    settings_service.get_ai_model.return_value = AiModelChoice(ProviderId.CLAUDE_CLI, "default")
+    settings_service.get_ai_step_models.return_value = {group: None for group in AiStepGroup}
+    intake_tools = JobIntakeTools(
+        repository,
+        preset_service,
+        settings_service,
+        AiStepModels(settings_service, lambda provider: True),
+        MagicMock(),
+    )
+    return FilmAnalysisJobService(repository, storage, JobIntake(intake_tools))
+
+
+@pytest.fixture(params=[InputMode.WHOLE_VIDEO, InputMode.FULL_VIDEO])
+def claude_only_refusal(request, repository, storage, preset_service, settings_service):
+    settings_service.get_film_analysis_input_mode.return_value = request.param
+    service = build_service_on_claude(repository, storage, preset_service, settings_service)
+    error = capture_error(
+        GoogleModelRequiredError,
+        lambda: service.create_film_analysis_job(build_upload("Phim.mkv"), None),
+    )
+    expected_group = "Audio" if request.param is InputMode.WHOLE_VIDEO else "Film analysis"
+    return SimpleNamespace(
+        message=str(error),
+        expected=f"{expected_group} needs a Google AI model — open Settings",
+        saved_names=[path.name for path in storage.job_dir(SOURCE_JOB_ID).parent.iterdir()],
+    )
+
+
+@pytest.fixture
+def claude_only_full_video_rerun_error(repository, storage, preset_service, settings_service):
+    repository.find_by_id.return_value = build_full_video_source_job(JobStatus.DONE)
+    service = build_service_on_claude(repository, storage, preset_service, settings_service)
+    return capture_error(
+        GoogleModelRequiredError, lambda: service.create_rerun_job(SOURCE_JOB_ID, None)
+    )
+
+
+@pytest.fixture
+def claude_only_subtitles_job(repository, storage, preset_service, settings_service):
+    settings_service.get_film_analysis_input_mode.return_value = InputMode.SUBTITLES
+    service = build_service_on_claude(repository, storage, preset_service, settings_service)
+    return service.create_film_analysis_job(build_upload("Phim.mkv"), None)
+
+
 @pytest.fixture
 def created_upload_job(service):
     return service.create_film_analysis_job(build_upload("Phim.mkv"), 20)
@@ -126,6 +204,18 @@ def created_upload_job(service):
 @pytest.fixture
 def created_prompt_keys(created_upload_job):
     return sorted(created_upload_job.options["prompts"])
+
+
+@pytest.fixture
+def created_subtitles_job(service, settings_service):
+    settings_service.get_film_analysis_input_mode.return_value = InputMode.SUBTITLES
+    return service.create_film_analysis_job(build_upload("Phim.mkv"), None)
+
+
+@pytest.fixture
+def created_full_video_job(service, settings_service):
+    settings_service.get_film_analysis_input_mode.return_value = InputMode.FULL_VIDEO
+    return service.create_film_analysis_job(build_upload("Phim.mkv"), 5)
 
 
 @pytest.fixture
@@ -151,6 +241,52 @@ def unsupported_file_error(service):
 @pytest.fixture
 def rerun_job(service):
     return service.create_rerun_job(SOURCE_JOB_ID, "preset-2")
+
+
+@pytest.fixture
+def full_video_rerun_job(service, repository):
+    repository.find_by_id.return_value = build_full_video_source_job(JobStatus.DONE)
+    repository.find_outputs.return_value = {}
+    return service.create_rerun_job(SOURCE_JOB_ID, "preset-2")
+
+
+@pytest.fixture
+def full_video_rerun_parts(storage, full_video_rerun_job):
+    return {
+        path.name: path.read_bytes()
+        for path in sorted(storage.compressed_dir(full_video_rerun_job.id).iterdir())
+    }
+
+
+@pytest.fixture
+def full_video_rerun_files(storage, full_video_rerun_job):
+    return sorted(path.name for path in storage.job_dir(full_video_rerun_job.id).iterdir())
+
+
+@pytest.fixture
+def full_video_source_without_parts_error(service, repository, storage):
+    repository.find_by_id.return_value = build_full_video_source_job(JobStatus.FAILED)
+    storage.delete_compressed(SOURCE_JOB_ID)
+    return capture_error(
+        NoCompressedVideoError, lambda: service.create_rerun_job(SOURCE_JOB_ID, None)
+    )
+
+
+@pytest.fixture
+def running_full_video_source_error(service, repository):
+    repository.find_by_id.return_value = build_full_video_source_job(JobStatus.PROCESSING)
+    return capture_error(
+        NoCompressedVideoError, lambda: service.create_rerun_job(SOURCE_JOB_ID, None)
+    )
+
+
+@pytest.fixture
+def full_video_rerun_unknown_preset_error(service, repository, preset_service):
+    repository.find_by_id.return_value = build_full_video_source_job(JobStatus.FAILED)
+    preset_service.get_job_snapshot.side_effect = PromptPresetNotFoundError("nope")
+    return capture_error(
+        JobPresetNotFoundError, lambda: service.create_rerun_job(SOURCE_JOB_ID, "nope")
+    )
 
 
 @pytest.fixture
@@ -241,15 +377,40 @@ def test_create_film_analysis_job_copies_every_prompt(created_upload_job, create
         "characterImage",
         "characterVoice",
         "scene",
+        "speakersAndSounds",
         "videoToMarkdown",
     ]
 
 
-def test_create_film_analysis_job_checks_the_moments_and_analysis_models(
+def test_create_film_analysis_job_in_whole_video_also_checks_a_google_audio_model(
     step_models, created_upload_job
 ):
     step_models.ensure_set_up.assert_called_once_with(
-        (AiStepGroup.MOMENTS, AiStepGroup.FILM_ANALYSIS)
+        (AiStepGroup.MOMENTS, AiStepGroup.FILM_ANALYSIS, AiStepGroup.AUDIO),
+        (AiStepGroup.AUDIO,),
+    )
+
+
+def test_create_film_analysis_job_in_subtitles_checks_the_moments_and_analysis_models(
+    step_models, created_subtitles_job
+):
+    assert created_subtitles_job.options["inputMode"] == "subtitles"
+    assert created_subtitles_job.options["maxFrames"] == 1000
+    step_models.ensure_set_up.assert_called_once_with(
+        (AiStepGroup.MOMENTS, AiStepGroup.FILM_ANALYSIS), ()
+    )
+
+
+def test_create_film_analysis_job_in_full_video_takes_no_max_frames(created_full_video_job):
+    assert created_full_video_job.options["inputMode"] == "full_video"
+    assert "maxFrames" not in created_full_video_job.options
+
+
+def test_create_film_analysis_job_in_full_video_needs_a_google_analysis_model(
+    step_models, created_full_video_job
+):
+    step_models.ensure_set_up.assert_called_once_with(
+        (AiStepGroup.FILM_ANALYSIS,), (AiStepGroup.FILM_ANALYSIS,)
     )
 
 
@@ -292,7 +453,65 @@ def test_rerun_keeps_display_options_and_copies_three_prompts(rerun_job):
 
 
 def test_rerun_checks_only_the_analysis_model(step_models, rerun_job):
-    step_models.ensure_set_up.assert_called_once_with((AiStepGroup.FILM_ANALYSIS,))
+    step_models.ensure_set_up.assert_called_once_with((AiStepGroup.FILM_ANALYSIS,), ())
+
+
+def test_rerun_of_a_full_video_analysis_keeps_its_input_mode(full_video_rerun_job, repository):
+    assert full_video_rerun_job.type == JobType.FILM_ANALYSIS_RERUN
+    assert full_video_rerun_job.options == {
+        "url": FULL_VIDEO_SOURCE_OPTIONS["url"],
+        "videoId": "vfjegxHDOwI",
+        "language": "vi",
+        "captionKind": "auto",
+        "inputMode": "full_video",
+        "rerunOfJobId": SOURCE_JOB_ID,
+        "preset": {"id": "preset-2", "name": "Three scenes", "version": 2},
+        "prompts": {
+            "characterImage": DEFAULT_PRESET_PROMPTS.character_image,
+            "characterVoice": DEFAULT_PRESET_PROMPTS.character_voice,
+            "scene": DEFAULT_PRESET_PROMPTS.scene,
+        },
+    }
+    assert repository.add.call_args.args[1] == ()
+
+
+def test_rerun_of_a_full_video_analysis_copies_only_the_compressed_parts(
+    full_video_rerun_parts, full_video_rerun_files
+):
+    assert full_video_rerun_parts == {"part-01.mp4": b"part-1", "part-02.mp4": b"part-2"}
+    assert full_video_rerun_files == ["compressed"]
+
+
+def test_rerun_of_a_full_video_analysis_needs_a_google_analysis_model(
+    step_models, full_video_rerun_job
+):
+    step_models.ensure_set_up.assert_called_once_with(
+        (AiStepGroup.FILM_ANALYSIS,), (AiStepGroup.FILM_ANALYSIS,)
+    )
+
+
+def test_rerun_refuses_a_full_video_source_without_compressed_parts(
+    full_video_source_without_parts_error, repository
+):
+    assert (
+        str(full_video_source_without_parts_error)
+        == f"Job {SOURCE_JOB_ID} has no compressed video to reuse"
+    )
+    repository.add.assert_not_called()
+
+
+def test_rerun_refuses_a_running_full_video_source(running_full_video_source_error):
+    assert (
+        str(running_full_video_source_error)
+        == f"Job {SOURCE_JOB_ID} has no compressed video to reuse"
+    )
+
+
+def test_rerun_of_a_full_video_analysis_checks_the_preset_before_the_ai(
+    full_video_rerun_unknown_preset_error, step_models
+):
+    assert str(full_video_rerun_unknown_preset_error) == "Prompt preset nope not found"
+    step_models.ensure_set_up.assert_not_called()
 
 
 def test_rerun_copies_the_video_notes_and_frames(rerun_job, rerun_output_rows, rerun_frame_bytes):
@@ -341,3 +560,22 @@ def test_delete_refuses_a_running_job(delete_running_error, repository):
 
 def test_delete_raises_for_an_unknown_job(delete_missing_error):
     assert str(delete_missing_error) == "Job nope not found"
+
+
+def test_a_group_that_needs_google_ai_refuses_the_creation_before_saving(
+    claude_only_refusal, repository
+):
+    assert claude_only_refusal.message == claude_only_refusal.expected
+    assert claude_only_refusal.saved_names == [SOURCE_JOB_ID]
+    repository.add.assert_not_called()
+
+
+def test_a_full_video_rerun_on_another_provider_is_refused(claude_only_full_video_rerun_error):
+    assert (
+        str(claude_only_full_video_rerun_error)
+        == "Film analysis needs a Google AI model — open Settings"
+    )
+
+
+def test_a_subtitles_analysis_runs_on_any_provider(claude_only_subtitles_job):
+    assert claude_only_subtitles_job.options["inputMode"] == "subtitles"

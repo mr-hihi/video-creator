@@ -20,6 +20,20 @@ TYPICAL_CLIP_PATTERN = re.compile(r"a typical clip lasts (\d+)s", re.IGNORECASE)
 NAMED_LINE_PATTERN = re.compile(r"^(.+?) \(([^)]+)\)")
 PART_NUMBER_PATTERN = re.compile(r"Write part (\d+) now\.")
 EPISODE_LINE_PATTERN = re.compile(r"^Episode (\d+): ", re.MULTILINE)
+FILM_PART_PATTERN = re.compile(r"This part of the film runs from ([\d:]+) to ([\d:]+)")
+MEDIA_LABEL_PATTERN = re.compile(r"^\[(?:audio|video) (.+)\]$")
+VIDEO_MIME_PREFIX = "video/"
+SPEAKERS_AND_SOUNDS_KEYS = frozenset({"speakers", "lines", "sounds"})
+MOCK_SPEAKERS = (
+    ("Speaker A", "Young woman, soft mid-pitched voice, calm."),
+    ("Speaker B", "Older man, deep slow voice, stern."),
+)
+MOCK_SOUNDS = (
+    ("action", "Footsteps on a wooden floor."),
+    ("ambient", "A dog barks outside."),
+    ("music", "Slow strings start."),
+)
+DEFAULT_FILM_PART_MS = 60_000
 NO_ITEMS_LINE = "(none)"
 NARRATION_OFF_LINE = "Narration: off"
 CHARACTERS_HEADING = "Characters:\n"
@@ -52,6 +66,8 @@ def build_reply(ask: AskView) -> dict[str, Any]:
     item_properties = find_item_properties(properties)
     if "moments" in properties:
         return build_outline(ask)
+    if properties.keys() >= SPEAKERS_AND_SOUNDS_KEYS:
+        return build_speakers_and_sounds(ask)
     if "shots" in properties:
         return build_shots(ask, properties)
     if "assets" in properties and "changed" in item_properties.get("assets", {}):
@@ -103,6 +119,25 @@ def build_outline(ask: AskView) -> dict[str, Any]:
         "moments": [
             {"atMs": at_ms, "title": f"Mock moment at {ms_to_clock(at_ms)}"}
             for at_ms in moment_times
+        ],
+    }
+
+
+def build_speakers_and_sounds(ask: AskView) -> dict[str, Any]:
+    part = FILM_PART_PATTERN.search(ask.message)
+    start_ms = clock_to_ms(part.group(1)) if part else 0
+    end_ms = clock_to_ms(part.group(2)) if part else start_ms + DEFAULT_FILM_PART_MS
+    sound_gap_ms = (end_ms - start_ms) // (len(MOCK_SOUNDS) + 1)
+    line_times = [int(found) for found in LINE_TIME_PATTERN.findall(ask.message)]
+    return {
+        "speakers": [{"name": name, "voice": voice} for name, voice in MOCK_SPEAKERS],
+        "lines": [
+            {"atMs": at_ms, "speaker": MOCK_SPEAKERS[index % len(MOCK_SPEAKERS)][0]}
+            for index, at_ms in enumerate(line_times)
+        ],
+        "sounds": [
+            {"atMs": start_ms + sound_gap_ms * number, "kind": kind, "description": description}
+            for number, (kind, description) in enumerate(MOCK_SOUNDS, start=1)
         ],
     }
 
@@ -261,23 +296,37 @@ def build_story_bible(ask: AskView) -> dict[str, Any]:
 
 
 def build_markdown_answer(ask: AskView) -> str:
+    watched_part = describe_watched_part(ask)
     if CHARACTERS_HEADING not in ask.message:
+        seen_in = watched_part or f"{len(ask.images)} frames"
         return "\n\n".join(
-            f"## Mock character {number}\n\nRole: seen in {len(ask.images)} frames.\n\n"
+            f"## Mock character {number}\n\nRole: seen in {seen_in}.\n\n"
             f"Portrait prompt: head and shoulders, plain background. Written by {ask.ai}."
             for number in (1, 2)
         )
     if "voice" in ask.instructions.casefold():
+        heard_in = f" Heard in {watched_part}." if watched_part else ""
         return "\n\n".join(
-            f"## Mock character {number}\n\nVoice: calm, mid pitch, slow pace.\n\n"
+            f"## Mock character {number}\n\nVoice: calm, mid pitch, slow pace.{heard_in}\n\n"
             f'> "Mock line {number}."'
             for number in (1, 2)
         )
-    labels = ask.image_labels[:MAX_SCENE_PROMPT_HEADINGS] or ["the video"]
+    labels = ask.image_labels[:MAX_SCENE_PROMPT_HEADINGS] or [watched_part or "the video"]
     return "\n\n".join(
         f"## Mock shot {number} — {label}\n\nMock prompt: medium shot, soft light, 6 seconds."
         for number, label in enumerate(labels, start=1)
     )
+
+
+def describe_watched_part(ask: AskView) -> str | None:
+    video_labels = [
+        media.label for media in ask.media if media.mime_type.startswith(VIDEO_MIME_PREFIX)
+    ]
+    if not video_labels:
+        return None
+    label = MEDIA_LABEL_PATTERN.match(video_labels[0])
+    part_range = label.group(1) if label else video_labels[0]
+    return f"the video part {part_range}".strip()
 
 
 def fill_schema(schema: dict[str, Any]) -> Any:

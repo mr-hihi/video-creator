@@ -48,7 +48,12 @@ from app.modules.prompt_presets.prompt_texts import PromptKey
 
 CLONE_MAX_FRAMES_LIMITS = (10, 1000)
 CLONE_ID_KEY = "cloneId"
-JOB_PROMPT_KEYS = (PromptKey.VIDEO_TO_MARKDOWN, PromptKey.CLONE_ASSETS, PromptKey.CLONE_SHOTS)
+JOB_PROMPT_KEYS = (
+    PromptKey.VIDEO_TO_MARKDOWN,
+    PromptKey.SPEAKERS_AND_SOUNDS,
+    PromptKey.CLONE_ASSETS,
+    PromptKey.CLONE_SHOTS,
+)
 CLONE_PROMPT_KEYS = (PromptKey.CLONE_LOCALIZATION, PromptKey.CLONE_SCRIPT)
 FILM_CLONE_AI_GROUPS = (AiStepGroup.MOMENTS, AiStepGroup.FILM_CLONE)
 STEP_BY_STEP_RUN_VALUES = {

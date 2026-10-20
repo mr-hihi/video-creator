@@ -13,7 +13,6 @@ import { ACCEPTED_VIDEO_EXTENSIONS, UPLOAD_LANGUAGE_OPTIONS, type UploadLanguage
 import { useCreateVideoToMarkdownJobMutation } from "@/features/jobs/queries";
 import { languageChanged, selectUploadLanguage } from "@/features/jobs/uploadPreferencesSlice";
 import { buildJobDetailPath } from "@/features/jobs/utils";
-import { AI_STEP_GROUPS_BY_RUN } from "@/features/settings/constants";
 import { useAiModelStatus } from "@/features/settings/queries";
 import { isAiModelBlocked } from "@/features/settings/utils";
 import { IS_CAPTCHA_ENABLED } from "@/lib/captcha/captchaWidget";
@@ -25,7 +24,7 @@ export function UploadVideoForm() {
   const dispatch = useAppDispatch();
   const language = useAppSelector(selectUploadLanguage);
   const createJobMutation = useCreateVideoToMarkdownJobMutation();
-  const aiModelStatus = useAiModelStatus(AI_STEP_GROUPS_BY_RUN.videoToMarkdown);
+  const aiModelStatus = useAiModelStatus({ kind: "videoToMarkdown" });
   const captchaRef = useRef<CaptchaHandle>(null);
   const [selectedFile, setSelectedFile] = useState<File>();
   const [captchaToken, setCaptchaToken] = useState<string>();
@@ -76,7 +75,7 @@ export function UploadVideoForm() {
         onChange={(nextLanguage) => dispatch(languageChanged(nextLanguage))}
       />
       <PromptPresetSelect selectedPresetId={presetId} isDisabled={isUploading} onChange={setPresetId} />
-      {aiModelStatus && <AiModelLine status={aiModelStatus} inputMode={aiModelStatus.inputMode} />}
+      {aiModelStatus && <AiModelLine status={aiModelStatus} />}
       <Captcha ref={captchaRef} onToken={setCaptchaToken} onTokenCleared={() => setCaptchaToken(undefined)} />
       {isUploading && <UploadProgress uploadedPercent={uploadedPercent} />}
       {createJobMutation.isError && <ErrorAlert>{createJobMutation.error.message}</ErrorAlert>}

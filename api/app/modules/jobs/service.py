@@ -13,10 +13,9 @@ from app.modules.jobs.errors import (
     ResultFileNotFoundError,
     ResultNotReadyError,
 )
-from app.modules.jobs.film_analysis.job_options import MAX_FRAMES_KEY, to_valid_max_frames
-from app.modules.jobs.job_ai import FILM_ANALYSIS_AI_GROUPS, MARKDOWN_AI_GROUPS
+from app.modules.jobs.job_ai import MARKDOWN_AI_GROUPS
 from app.modules.jobs.job_intake import JobIntake
-from app.modules.jobs.job_prompts import FILM_ANALYSIS_PROMPT_KEYS, VIDEO_TO_MARKDOWN_PROMPT_KEYS
+from app.modules.jobs.job_prompts import VIDEO_TO_MARKDOWN_PROMPT_KEYS
 from app.modules.jobs.models import (
     VIDEO_NOTES_JOB_TYPES,
     Job,
@@ -168,11 +167,7 @@ class YoutubeJobService:
         self, request: YoutubeJobRequest, max_frames: int | None
     ) -> Job:
         validate_youtube_language(request.language)
-        valid_max_frames = to_valid_max_frames(max_frames)
-        prompt_options = self._intake.resolve_prompt_options(
-            request.preset_id, FILM_ANALYSIS_PROMPT_KEYS
-        )
-        ai_options = self._intake.resolve_ai_options(FILM_ANALYSIS_AI_GROUPS)
+        analysis_options = self._intake.resolve_film_analysis_options(request.preset_id, max_frames)
         video = self._video_checker.fetch_convertible_video(request.link)
         return self._intake.enqueue(
             build_youtube_job(
@@ -180,9 +175,7 @@ class YoutubeJobService:
                 video,
                 {
                     **build_youtube_job_options(video.video_id, request.language),
-                    MAX_FRAMES_KEY: valid_max_frames,
-                    **prompt_options,
-                    **ai_options,
+                    **analysis_options,
                 },
             )
         )

@@ -1,5 +1,5 @@
 import type { PresetPrompts, PresetSnapshot } from "@/features/promptPresets/types";
-import type { AiUsed, InputMode } from "@/features/settings/types";
+import type { AiUsed, FilmAnalysisInputMode } from "@/features/settings/types";
 
 export type VideoToMarkdownJobType = "video_to_markdown" | "youtube_to_markdown";
 
@@ -13,8 +13,10 @@ export type JobStep =
   | "extracting_audio"
   | "transcribing"
   | "fetching_transcript"
+  | "listening_to_audio"
   | "picking_moments"
   | "downloading_video"
+  | "compressing_video"
   | "sampling_frames"
   | "detecting_scenes"
   | "capturing_frames"
@@ -29,6 +31,7 @@ export type CaptionKind = "manual" | "auto";
 
 export interface FrameCounts {
   dialogue: number;
+  sound?: number;
   scene: number;
 }
 
@@ -42,7 +45,7 @@ export interface JobOptions {
   rerunOfJobId?: string;
   preset?: PresetSnapshot;
   prompts?: Partial<PresetPrompts>;
-  inputMode?: InputMode;
+  inputMode?: FilmAnalysisInputMode;
 }
 
 export interface Job {

@@ -106,7 +106,7 @@ function FilmAnalysisDetailContent({ job }: { job: JobDetail }) {
       )}
       {canRerunJob(job) && (
         <Panel title="Rerun with another preset">
-          <FilmRerunForm sourceJobId={job.id} />
+          <FilmRerunForm sourceJobId={job.id} sourceInputMode={job.options.inputMode} />
         </Panel>
       )}
       {isSendDialogOpen && (

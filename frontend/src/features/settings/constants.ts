@@ -4,6 +4,7 @@ import type {
   AiProviderId,
   AiStepGroup,
   AiStepModels,
+  FilmAnalysisInputMode,
   InputMode,
   MediaProviderSettingKey,
   ScriptLanguage,
@@ -50,13 +51,17 @@ export const SCRIPT_LANGUAGE_HINT =
   "The language Film Clone writes scripts in. Film Studio narrates only Vietnamese, English or Japanese.";
 
 export const DEFAULT_INPUT_MODE: InputMode = "subtitles";
+export const FULL_VIDEO_INPUT_MODE: FilmAnalysisInputMode = "full_video";
 
 export const AI_PROVIDER_IDS: readonly AiProviderId[] = ["claude_cli", "google", "openai"];
 
-export const AI_STEP_GROUPS: readonly AiStepGroup[] = ["moments", "filmAnalysis", "filmScript", "filmClone"];
+export const GOOGLE_AI_PROVIDER_ID: AiProviderId = "google";
+
+export const AI_STEP_GROUPS: readonly AiStepGroup[] = ["moments", "audio", "filmAnalysis", "filmScript", "filmClone"];
 
 export const AI_STEP_GROUP_LABELS: Record<AiStepGroup, string> = {
   moments: "Key moments",
+  audio: "Audio",
   filmAnalysis: "Film analysis",
   filmScript: "Film script",
   filmClone: "Film clone",
@@ -64,21 +69,37 @@ export const AI_STEP_GROUP_LABELS: Record<AiStepGroup, string> = {
 
 export const AI_STEP_GROUP_HINTS: Record<AiStepGroup, string> = {
   moments: "Picks the key moments of every video.",
-  filmAnalysis: "Writes the character image, voice and scene prompts.",
+  audio: "Hears the speakers and sounds in Frame image + audio mode. Google AI only.",
+  filmAnalysis: "Writes the character image, voice and scene prompts. Google AI only in Full video mode.",
   filmScript: "Writes the scripts of Film Studio episodes.",
   filmClone: "Finds assets and shots, proposes changes and writes Film Clone scripts.",
 };
 
 export const AI_STEP_GROUPS_BY_RUN = {
   videoToMarkdown: ["moments"],
-  filmAnalysis: ["moments", "filmAnalysis"],
   filmAnalysisRerun: ["filmAnalysis"],
-  filmClone: ["moments", "filmClone"],
   filmScript: ["filmScript"],
 } as const satisfies Record<string, readonly AiStepGroup[]>;
 
+export const FILM_ANALYSIS_AI_STEP_GROUPS_BY_INPUT_MODE: Record<FilmAnalysisInputMode, readonly AiStepGroup[]> = {
+  subtitles: ["moments", "filmAnalysis"],
+  whole_video: ["moments", "audio", "filmAnalysis"],
+  full_video: ["filmAnalysis"],
+};
+
+export const FILM_CLONE_AI_STEP_GROUPS_BY_INPUT_MODE: Record<InputMode, readonly AiStepGroup[]> = {
+  subtitles: ["moments", "filmClone"],
+  whole_video: ["moments", "audio", "filmClone"],
+};
+
+export const GOOGLE_AI_INPUT_MODE_BY_STEP_GROUP: Partial<Record<AiStepGroup, FilmAnalysisInputMode>> = {
+  audio: "whole_video",
+  filmAnalysis: "full_video",
+};
+
 export const SAME_AS_ALL_STEPS_STEP_MODELS: AiStepModels = {
   moments: null,
+  audio: null,
   filmAnalysis: null,
   filmScript: null,
   filmClone: null,
@@ -88,18 +109,33 @@ export const SAME_AS_ALL_STEPS_OPTION_VALUE = "same";
 export const AI_MODEL_OPTION_VALUE_SEPARATOR = ":";
 export const AI_MODEL_LIST_SEPARATOR = " · ";
 export const EMPTY_AI_USED_LABEL = "—";
+export const EMPTY_INPUT_MODE_LABEL = "—";
 
-export const INPUT_MODE_LABELS: Record<InputMode, string> = {
+export const VIDEO_TO_MARKDOWN_INPUT_MODE_LABELS: Record<InputMode, string> = {
   subtitles: "Subtitles",
   whole_video: "Whole video",
 };
 
+export const FILM_CLONE_INPUT_MODE_LABELS: Record<InputMode, string> = {
+  subtitles: "Subtitles",
+  whole_video: "Frame image + audio",
+};
+
+export const FILM_ANALYSIS_INPUT_MODE_LABELS: Record<FilmAnalysisInputMode, string> = {
+  ...FILM_CLONE_INPUT_MODE_LABELS,
+  full_video: "Full video",
+};
+
 export const ALL_STEPS_MODEL_HINT = "The model of every step set to Same as all steps.";
 
-export const INPUT_MODE_HINT =
+export const VIDEO_TO_MARKDOWN_INPUT_MODE_HINT =
   "Subtitles: the model reads the transcript to pick key moments. Whole video: it also sees one frame per second — slower, with more calls on long videos.";
 
-export const AI_MODELS_INPUT_MODE_HINT = `For Video to Markdown and Film Analysis. ${INPUT_MODE_HINT}`;
+export const FILM_ANALYSIS_INPUT_MODE_HINT =
+  "Subtitles: the model reads the transcript to pick key moments. Frame image + audio: it also sees one frame per second, and Gemini hears who speaks and the sounds. Full video: Gemini watches the compressed film and writes the prompts — no frames or video notes.";
+
+export const FILM_CLONE_INPUT_MODE_HINT =
+  "Subtitles: the model reads the transcript to pick key moments. Frame image + audio: it also sees one frame per second, and Gemini hears who speaks and the sounds — slower, with more calls on long videos.";
 
 export const ROUTES_BY_MEDIA_PROVIDER_SETTING: Record<MediaProviderSettingKey, RouteName> = {
   filmCloneImageProvider: "image",

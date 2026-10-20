@@ -78,7 +78,19 @@ from app.modules.films.style_service import FilmStyleService
 from app.modules.films.thumbnail_cropper import CropperConfig, FfmpegThumbnailCropper
 from app.modules.films.thumbnail_service import FilmThumbnailService, ThumbnailServiceTools
 from app.modules.films.voice_service import FilmVoiceService, FilmVoiceTools
+from app.modules.jobs.film_analysis.audio_listener import (
+    AudioListener,
+    AudioListenerConfig,
+    AudioListenerTools,
+)
 from app.modules.jobs.film_analysis.frame_steps import FilmFrameSteps, FilmFrameTools
+from app.modules.jobs.film_analysis.full_video import (
+    FullVideoPassTools,
+    FullVideoPromptPasses,
+    FullVideoSteps,
+    VideoCompressor,
+    VideoCompressorConfig,
+)
 from app.modules.jobs.film_analysis.handler import (
     FilmAnalysisHandler,
     FilmAnalysisRerunHandler,
@@ -522,21 +534,8 @@ def _build_film_analysis_handlers(
     settings: Settings, shared_tools: _SharedTools, clone_passes: NotesPasses
 ) -> dict[JobType, JobHandler]:
     infrastructure = shared_tools.infrastructure
-    frame_steps = FilmFrameSteps(
-        infrastructure.repository,
-        FilmFrameTools(
-            moment_steps=shared_tools.moment_steps,
-            scene_detector=FfmpegSceneDetector(
-                SceneDetectorConfig(
-                    settings.ffmpeg_bin,
-                    settings.film_scene_threshold,
-                    settings.film_scene_timeout_sec,
-                ),
-                infrastructure.runner,
-            ),
-            frame_capturer=shared_tools.frame_capturer,
-        ),
-    )
+    frame_steps = _build_film_frame_steps(settings, shared_tools)
+    full_video = _build_full_video_steps(settings, shared_tools)
     prompt_passes = FilmPromptPasses(
         PromptPassTools(
             storage=infrastructure.storage,
@@ -555,6 +554,7 @@ def _build_film_analysis_handlers(
                 transcriber=shared_tools.transcriber,
                 frame_steps=frame_steps,
                 prompt_passes=prompt_passes,
+                full_video=full_video,
             ),
         ),
         JobType.YOUTUBE_FILM_ANALYSIS: YoutubeFilmAnalysisHandler(
@@ -565,10 +565,11 @@ def _build_film_analysis_handlers(
                 downloader=shared_tools.downloader,
                 frame_steps=frame_steps,
                 prompt_passes=prompt_passes,
+                full_video=full_video,
             ),
         ),
         JobType.FILM_ANALYSIS_RERUN: FilmAnalysisRerunHandler(
-            infrastructure.repository, prompt_passes
+            infrastructure.repository, prompt_passes, full_video
         ),
         JobType.FILM_CLONE: FilmAnalysisHandler(
             infrastructure.storage,
@@ -578,6 +579,7 @@ def _build_film_analysis_handlers(
                 transcriber=shared_tools.transcriber,
                 frame_steps=frame_steps,
                 prompt_passes=clone_passes,
+                full_video=full_video,
             ),
         ),
         JobType.YOUTUBE_FILM_CLONE: YoutubeFilmAnalysisHandler(
@@ -588,9 +590,63 @@ def _build_film_analysis_handlers(
                 downloader=shared_tools.downloader,
                 frame_steps=frame_steps,
                 prompt_passes=clone_passes,
+                full_video=full_video,
             ),
         ),
     }
+
+
+def _build_film_frame_steps(settings: Settings, shared_tools: _SharedTools) -> FilmFrameSteps:
+    infrastructure = shared_tools.infrastructure
+    return FilmFrameSteps(
+        infrastructure.repository,
+        FilmFrameTools(
+            moment_steps=shared_tools.moment_steps,
+            scene_detector=FfmpegSceneDetector(
+                SceneDetectorConfig(
+                    settings.ffmpeg_bin,
+                    settings.film_scene_threshold,
+                    settings.film_scene_timeout_sec,
+                ),
+                infrastructure.runner,
+            ),
+            frame_capturer=shared_tools.frame_capturer,
+            audio_listener=AudioListener(
+                AudioListenerTools(
+                    storage=infrastructure.storage,
+                    repository=infrastructure.repository,
+                    media=shared_tools.media,
+                    ai_caller=shared_tools.ai_caller,
+                ),
+                AudioListenerConfig(
+                    part_sec=settings.ai_media_part_sec,
+                    limits=AiLimits(timeout_sec=settings.ai_audio_timeout_sec),
+                ),
+            ),
+        ),
+    )
+
+
+def _build_full_video_steps(settings: Settings, shared_tools: _SharedTools) -> FullVideoSteps:
+    infrastructure = shared_tools.infrastructure
+    return FullVideoSteps(
+        VideoCompressor(
+            infrastructure.storage,
+            shared_tools.media,
+            VideoCompressorConfig(
+                part_sec=settings.ai_media_part_sec,
+                max_side_px=settings.full_video_max_side_px,
+                max_fps=settings.full_video_max_fps,
+            ),
+        ),
+        FullVideoPromptPasses(
+            FullVideoPassTools(
+                repository=infrastructure.repository,
+                ai_caller=shared_tools.ai_caller,
+                limits=AiLimits(timeout_sec=settings.film_prompt_timeout_sec),
+            )
+        ),
+    )
 
 
 def _build_youtube_video_checker(settings: Settings, runner: CommandRunner) -> YoutubeVideoChecker:
