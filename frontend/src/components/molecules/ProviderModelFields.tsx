@@ -1,6 +1,11 @@
-import { LOCAL_MODEL_LINE, MODEL_FIELD_LABELS } from "@/features/providers/constants";
+import { LOCAL_MODEL_LINE, MODEL_FIELD_HELP_TEXTS, MODEL_FIELD_LABELS } from "@/features/providers/constants";
 import type { GenerationMediaKind, ModelIdsByKind, Provider } from "@/features/providers/types";
-import { buildModelOptions, listModelMediaKinds, resolveSavedModelId } from "@/features/providers/utils";
+import {
+  buildModelOptions,
+  buildProviderHelpText,
+  listModelMediaKinds,
+  resolveSavedModelId,
+} from "@/features/providers/utils";
 import { SelectField } from "./SelectField";
 
 interface ProviderModelFieldsProps {
@@ -28,6 +33,7 @@ export function ProviderModelFields({
           label={MODEL_FIELD_LABELS[mediaKind]}
           value={draftModelIdsByKind[mediaKind] ?? resolveSavedModelId(provider, mediaKind)}
           options={buildModelOptions(provider.catalog[mediaKind] ?? [])}
+          helpText={buildProviderHelpText(MODEL_FIELD_HELP_TEXTS[mediaKind], provider.name)}
           isDisabled={isDisabled}
           onChange={(modelId) => onChange(mediaKind, modelId)}
         />

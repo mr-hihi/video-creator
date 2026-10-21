@@ -10,11 +10,21 @@ import { ProviderCardHeader } from "@/components/molecules/ProviderCardHeader";
 import { ProviderModelsLine } from "@/components/molecules/ProviderModelsLine";
 import { ProviderPacingFields } from "@/components/molecules/ProviderPacingFields";
 import { TextField } from "@/components/molecules/TextField";
-import { ADAPTER_BASE_URL_HINT, ADAPTER_PROVIDER_IDS, EMPTY_PROVIDER_DRAFT } from "@/features/providers/constants";
+import {
+  ADAPTER_BASE_URL_HINT,
+  ADAPTER_PROVIDER_IDS,
+  API_KEY_HELP_TEXT,
+  BASE_URL_HELP_TEXT,
+  EMPTY_PROVIDER_DRAFT,
+  FLOW_PROJECT_ID_HELP_TEXT,
+  MAX_CONCURRENT_HELP_TEXT,
+} from "@/features/providers/constants";
 import { useTestProviderConnectionMutation, useUpdateProviderMutation } from "@/features/providers/queries";
 import type { Provider, ProviderDraft } from "@/features/providers/types";
 import {
   buildApiKeyPlaceholder,
+  buildMinIntervalHelpText,
+  buildProviderHelpText,
   buildProviderUpdate,
   computeRemainingPauseSeconds,
   hasProviderChanges,
@@ -120,6 +130,7 @@ function ProviderDraftFields({
         <ApiKeyField
           value={draft.apiKey}
           placeholder={buildApiKeyPlaceholder(provider)}
+          helpText={buildProviderHelpText(API_KEY_HELP_TEXT, provider.name)}
           hasStoredKey={provider.hasKey}
           isDisabled={!isSecretKeySet || isSaving}
           isRemoveDisabled={isRemoveKeyDisabled}
@@ -132,6 +143,7 @@ function ProviderDraftFields({
           label="Base URL"
           value={draft.baseUrl ?? provider.baseUrl ?? ""}
           hint={ADAPTER_PROVIDER_IDS.has(provider.id) ? ADAPTER_BASE_URL_HINT : undefined}
+          helpText={BASE_URL_HELP_TEXT}
           isDisabled={isSaving}
           onChange={(baseUrl) => onDraftChange({ baseUrl })}
         />
@@ -141,6 +153,7 @@ function ProviderDraftFields({
           <TextField
             label="Fallback Flow project id"
             value={draft.flowProjectId ?? provider.flowProjectId ?? ""}
+            helpText={FLOW_PROJECT_ID_HELP_TEXT}
             isDisabled={isSaving}
             onChange={(flowProjectId) => onDraftChange({ flowProjectId })}
           />
@@ -154,6 +167,8 @@ function ProviderDraftFields({
         <ProviderPacingFields
           maxConcurrent={draft.maxConcurrent ?? String(provider.maxConcurrent)}
           minIntervalS={draft.minIntervalS ?? String(provider.minIntervalS)}
+          maxConcurrentHelpText={buildProviderHelpText(MAX_CONCURRENT_HELP_TEXT, provider.name)}
+          minIntervalHelpText={buildMinIntervalHelpText(provider)}
           isDisabled={isSaving}
           onMaxConcurrentChange={(maxConcurrent) => onDraftChange({ maxConcurrent })}
           onMinIntervalChange={(minIntervalS) => onDraftChange({ minIntervalS })}

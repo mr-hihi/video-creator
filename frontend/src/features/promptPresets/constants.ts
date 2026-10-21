@@ -25,6 +25,10 @@ export const PROMPT_PRESETS_DESCRIPTION =
   "The prompts the AI model follows in every job. Each job copies the prompts of the preset chosen when it is created.";
 export const MAX_PRESET_NAME_LENGTH = 50;
 export const MAX_PROMPT_LENGTH = 20_000;
+export const PROMPT_SECTION_TITLE_PLACEHOLDER = "{title}";
+export const PRESET_NAME_HELP_TEXT = "The name of the preset in every preset list. Default keeps its name.";
+export const PROMPT_INSTRUCTIONS_HELP_TEXT =
+  "What the AI model is told to do for {title}. A job copies these instructions when it is created, so a change applies to new jobs only. The parts under Added by the app are added by the app and cannot be changed.";
 export const PRESET_EXPORT_ACCEPT = ".json,application/json";
 
 export const PRESET_CHANGE_LABELS: Record<PresetChange, string> = {

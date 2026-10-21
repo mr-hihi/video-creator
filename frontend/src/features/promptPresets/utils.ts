@@ -5,6 +5,8 @@ import {
   MAX_PRESET_NAME_LENGTH,
   MAX_PROMPT_LENGTH,
   PRESET_CHANGE_LABELS,
+  PROMPT_INSTRUCTIONS_HELP_TEXT,
+  PROMPT_SECTION_TITLE_PLACEHOLDER,
   PROMPT_SECTIONS,
 } from "./constants";
 import type { PresetPrompts, PresetSnapshot, PromptKey, PromptPreset, PromptPresetVersion } from "./types";
@@ -14,6 +16,10 @@ const PROMPT_KEYS: readonly PromptKey[] = PROMPT_SECTIONS.map((section) => secti
 
 export function buildPromptPresetsPath(presetId: string): string {
   return `${buildSettingsPath(PROMPT_OVERRIDE_SETTINGS_TAB)}&id=${encodeURIComponent(presetId)}`;
+}
+
+export function buildPromptInstructionsHelpText(sectionTitle: string): string {
+  return PROMPT_INSTRUCTIONS_HELP_TEXT.replace(PROMPT_SECTION_TITLE_PLACEHOLDER, sectionTitle);
 }
 
 export function findDefaultPreset(presets: readonly PromptPreset[]): PromptPreset | undefined {

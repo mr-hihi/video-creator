@@ -82,7 +82,7 @@ Test cases for [business/2-prompt-presets.md](../business/2-prompt-presets.md). 
   5. Click tab `AI models`
   6. Navigate to http://localhost:5071/settings?tab=prompt-presets&id={Uppercase titles id}
 - **Expected:**
-  - Step 1: the header has no `Prompt presets` item; tabs `General` · `AI models` · `Prompt override` · `Film Clone` · `Film Studio`, `General` open
+  - Step 1: the header has no `Prompt presets` item; tabs `General` · `AI models` · `Prompt override` · `Film Analysis` · `Film Clone` · `Film Studio`, `General` open
   - Step 2: URL becomes `/settings` with the query `tab=prompt-override` and `id={Uppercase titles id}`; `Settings` is highlighted in the header; tab `Prompt override` is open with the line `The prompts the AI model follows in every job. Each job copies the prompts of the preset chosen when it is created.`, the panels `Presets` and `Editor`, and `Uppercase titles` selected
   - Steps 3 and 4 show the dialog `Discard unsaved changes?`; after `Cancel` the tab stays open with the `x`
   - Step 4: URL becomes `/settings?tab=general`

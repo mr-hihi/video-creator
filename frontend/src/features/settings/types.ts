@@ -38,7 +38,7 @@ export interface AppSettings {
 
 export type MediaProviderSettingKey = "filmCloneImageProvider" | "filmStudioImageProvider" | "filmStudioClipProvider";
 
-export type AiModelSettings = Pick<AppSettings, "aiModel" | "aiStepModels" | "inputMode" | "filmAnalysisInputMode">;
+export type AiModelSettings = Pick<AppSettings, "aiModel" | "aiStepModels" | "inputMode">;
 
 export interface AiModelsDraft {
   settings: Partial<AiModelSettings>;

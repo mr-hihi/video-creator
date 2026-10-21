@@ -6,7 +6,9 @@ import { MediaProviderSelectField } from "@/components/molecules/MediaProviderSe
 import { IMAGE_ROUTE_PROVIDER_IDS, VIDEO_ROUTE_PROVIDER_IDS } from "@/features/providers/constants";
 import { useProviderSettingsQuery } from "@/features/providers/queries";
 import {
+  FILM_STUDIO_CLIP_PROVIDER_HELP_TEXT,
   FILM_STUDIO_CLIP_PROVIDER_HINT,
+  FILM_STUDIO_IMAGE_PROVIDER_HELP_TEXT,
   FILM_STUDIO_IMAGE_PROVIDER_HINT,
   FILM_STUDIO_SETTINGS_FORM_KEY,
   ROUTES_BY_MEDIA_PROVIDER_SETTING,
@@ -33,6 +35,7 @@ export function FilmStudioSettingsForm({ onUnsavedChangesChange }: FilmStudioSet
           <MediaProviderSelectField
             label="Images with"
             hint={FILM_STUDIO_IMAGE_PROVIDER_HINT}
+            helpText={FILM_STUDIO_IMAGE_PROVIDER_HELP_TEXT}
             route={ROUTES_BY_MEDIA_PROVIDER_SETTING.filmStudioImageProvider}
             value={shownSettings.filmStudioImageProvider}
             providerIds={IMAGE_ROUTE_PROVIDER_IDS}
@@ -43,6 +46,7 @@ export function FilmStudioSettingsForm({ onUnsavedChangesChange }: FilmStudioSet
           <MediaProviderSelectField
             label="Clips with"
             hint={FILM_STUDIO_CLIP_PROVIDER_HINT}
+            helpText={FILM_STUDIO_CLIP_PROVIDER_HELP_TEXT}
             route={ROUTES_BY_MEDIA_PROVIDER_SETTING.filmStudioClipProvider}
             value={shownSettings.filmStudioClipProvider}
             providerIds={VIDEO_ROUTE_PROVIDER_IDS}

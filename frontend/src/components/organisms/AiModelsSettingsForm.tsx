@@ -118,7 +118,7 @@ function AiModelsDraftFields({ settings, providerSettings, draft, isDisabled, on
     <>
       <AiModelsFieldset
         settings={{ ...settings, ...draft.settings }}
-        savedFilmCloneInputMode={settings.filmCloneInputMode}
+        savedFilmInputModes={[settings.filmAnalysisInputMode, settings.filmCloneInputMode]}
         analysisProviders={listAnalysisProviders(providerSettings)}
         isDisabled={isDisabled}
         onChange={changeAiModelSettings}

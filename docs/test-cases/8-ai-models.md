@@ -35,7 +35,7 @@ Test cases for [business/8-ai-models.md](../business/8-ai-models.md). Acronym `A
   6. Click `General` in the warning under `All steps`
 - **Expected:**
   - Step 1: `aiModel` = `CLI`; `aiStepModels` = `{"moments":null,"audio":null,"filmAnalysis":null,"filmScript":null,"filmClone":null}`; `inputMode`, `filmAnalysisInputMode` and `filmCloneInputMode` = `subtitles`
-  - Step 2: tab `AI models` opens with the group `Text`: `All steps` = `Claude (CLI default)` and its hint `The model of every step set to Same as all steps.`, `Apply to all steps` disabled, rows `Key moments`, `Audio`, `Film analysis`, `Film script`, `Film clone` each = `Same as all steps (Claude (CLI default))` with their hints, then `Video to Markdown input` = `Subtitles` and `Film Analysis input` = `Subtitles`, each with its hint of 8.4; no Google AI warning; then the groups `Images`, `Clips`, `Speech`, `Music`; `Save` is disabled
+  - Step 2: tab `AI models` opens with the group `Text`: `All steps` = `Claude (CLI default)` and its hint `The model of every step set to Same as all steps.`, `Apply to all steps` disabled, rows `Key moments`, `Audio`, `Film analysis`, `Film script`, `Film clone` each = `Same as all steps (Claude (CLI default))` with their hints, then `Video to Markdown input` = `Subtitles` with its hint of 8.4 — no `Film Analysis input`; no Google AI warning; then the groups `Images`, `Clips`, `Speech`, `Music`; `Save` is disabled
   - Step 3: `Key moments`, `Audio`, `Film analysis` and `Film script` read `Same as all steps (Gemini 3.8 Flash)`, `Film clone` reads `GPT-6 Astra`; warning `Google AI (Gemini, Veo) is not set up — add its key in General.` under `All steps`, `OpenAI is not set up — add its key in General.` under `Film clone`, none under the other rows; `Apply to all steps` and `Save` are enabled
   - Step 4: notice `Saved`
   - Step 5: the same selections; body has `"aiModel":G38`, `"aiStepModels":{"moments":null,"audio":null,"filmAnalysis":null,"filmScript":null,"filmClone":OA}`, `"inputMode":"whole_video"`, `"filmAnalysisInputMode":"subtitles"`, `"filmCloneInputMode":"subtitles"`
@@ -246,19 +246,21 @@ Test cases for [business/8-ai-models.md](../business/8-ai-models.md). Acronym `A
 
 ## Frame image + audio and Full video
 
-### TC-AIM-25: Film Analysis input and the Google AI warnings
+### TC-AIM-25: Film Analysis input mode and the Google AI warnings
 - **App:** Frontend + API
-- **Precondition:** `PATCH S` `{"aiModel":CLI,"aiStepModels":{}}`.
+- **Precondition:** `PATCH S` `{"aiModel":CLI,"aiStepModels":{},"filmAnalysisInputMode":"subtitles","filmCloneInputMode":"subtitles"}`.
 - **Steps:**
-  1. Navigate to http://localhost:5071/settings?tab=ai-models; select `Frame image + audio` from `Film Analysis input`
-  2. Select `Full video` from `Film Analysis input`
-  3. Select `Gemini 3.8 Flash` from `Film analysis`; click `Save`; `curl -s S`
-  4. Click tab `Film Clone`; select `Frame image + audio` from `Input mode`
+  1. Navigate to http://localhost:5071/settings?tab=film-analysis; select `Frame image + audio` from `Input mode`; click `Save`
+  2. Click tab `AI models`
+  3. Click tab `Film Analysis`; select `Full video` from `Input mode`; click `Save`; click tab `AI models`
+  4. Select `Gemini 3.8 Flash` from `Film analysis`; click `Save`; `curl -s S`
+  5. Click tab `Film Analysis`, then tab `Film Clone`; select `Frame image + audio` from `Input mode`
 - **Expected:**
-  - Step 1: under `Audio`, `Frame image + audio needs a Google AI model here.`; nothing saved yet
-  - Step 2: that warning is gone; under `Film analysis`, `Full video needs a Google AI model here.`
-  - Step 3: the `Film analysis` warning is gone; notice `Saved`; body has `"filmAnalysisInputMode":"full_video"`, `"aiStepModels":{"moments":null,"audio":null,"filmAnalysis":G38,"filmScript":null,"filmClone":null}`, `"inputMode":"subtitles"`
-  - Step 4: under `Input mode`, `Frame image + audio needs a Google AI model here.`, read from the saved `Audio` model
+  - Step 1: under `Input mode`, `Frame image + audio needs a Google AI model here.`; notice `Saved`
+  - Step 2: under `Audio`, `Frame image + audio needs a Google AI model here.`; no warning under `Film analysis`
+  - Step 3: on `Film Analysis`, `Full video needs a Google AI model here.`; on `AI models`, that warning under `Film analysis` and none under `Audio`
+  - Step 4: the `Film analysis` warning is gone; notice `Saved`; body has `"filmAnalysisInputMode":"full_video"`, `"aiStepModels":{"moments":null,"audio":null,"filmAnalysis":G38,"filmScript":null,"filmClone":null}`, `"inputMode":"subtitles"`
+  - Step 5: no warning under `Input mode` of `Film Analysis`; on `Film Clone`, under `Input mode`, `Frame image + audio needs a Google AI model here.`, read from the saved `Audio` model
 
 ### TC-AIM-26: A group that needs Google AI is refused at creation
 - **App:** API
@@ -409,7 +411,7 @@ Test cases for [business/8-ai-models.md](../business/8-ai-models.md). Acronym `A
   5. Click the `Change` of the AI models
 - **Expected:**
   - Step 1: `New clone` reads `AI: Key moments — Claude (CLI default) · Audio — Gemini 3.8 Flash · Film clone — Claude (CLI default) · Input: Frame image + audio`, with a link `Change` for the AI models and its own link `Change` right after `Input: Frame image + audio`
-  - Step 2: `New analysis` reads `AI: Claude (CLI default) · Input: Subtitles` with one link `Change` — `Audio` is not used in `subtitles`
+  - Step 2: `New analysis` reads `AI: Claude (CLI default) · Input: Subtitles`, with a link `Change` for the AI models and its own link `Change` right after `Input: Subtitles` — `Audio` is not used in `subtitles`
   - Step 3: URL becomes `/settings?tab=film-clone`; tab `Film Clone` open with `Input mode` = `Frame image + audio`
   - Step 4: notice `Saved`; `New clone` reads `AI: Claude (CLI default) · Input: Subtitles`; body has `"inputMode":"subtitles"`, `"filmCloneInputMode":"subtitles"`
   - Step 5: URL becomes `/settings?tab=ai-models`

@@ -1,6 +1,7 @@
 "use client";
 
 import { useId } from "react";
+import { FieldLabel } from "@/components/atoms/FieldLabel";
 import { NumberInput } from "@/components/atoms/NumberInput";
 
 interface NumberFieldProps {
@@ -9,19 +10,27 @@ interface NumberFieldProps {
   min: number;
   max?: number;
   hint?: string;
+  helpText?: string;
   isDisabled?: boolean;
   onChange: (value: string) => void;
 }
 
-export function NumberField({ label, value, min, max, hint, isDisabled = false, onChange }: NumberFieldProps) {
+export function NumberField({
+  label,
+  value,
+  min,
+  max,
+  hint,
+  helpText,
+  isDisabled = false,
+  onChange,
+}: NumberFieldProps) {
   const inputId = useId();
   const hintId = useId();
 
   return (
     <div className="flex flex-col gap-2">
-      <label htmlFor={inputId} className="text-sm font-medium">
-        {label}
-      </label>
+      <FieldLabel htmlFor={inputId} label={label} helpText={helpText} />
       <NumberInput
         id={inputId}
         value={value}

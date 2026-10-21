@@ -1,18 +1,28 @@
 "use client";
 
-import { useId, type ReactNode } from "react";
+import { useId } from "react";
+import { FieldLabel } from "@/components/atoms/FieldLabel";
 import { TextArea } from "@/components/atoms/TextArea";
 
 interface TextAreaFieldProps {
-  label: ReactNode;
+  label: string;
   value: string;
   maxLength?: number;
   hint?: string;
+  helpText?: string;
   isDisabled?: boolean;
   onChange: (value: string) => void;
 }
 
-export function TextAreaField({ label, value, maxLength, hint, isDisabled = false, onChange }: TextAreaFieldProps) {
+export function TextAreaField({
+  label,
+  value,
+  maxLength,
+  hint,
+  helpText,
+  isDisabled = false,
+  onChange,
+}: TextAreaFieldProps) {
   const textAreaId = useId();
   const counterId = useId();
   const hintId = useId();
@@ -20,9 +30,7 @@ export function TextAreaField({ label, value, maxLength, hint, isDisabled = fals
 
   return (
     <div className="flex flex-col gap-2">
-      <label htmlFor={textAreaId} className="text-sm font-medium">
-        {label}
-      </label>
+      <FieldLabel htmlFor={textAreaId} label={label} helpText={helpText} />
       <TextArea
         id={textAreaId}
         value={value}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, type HTMLAttributes } from "react";
+import { FieldLabel } from "@/components/atoms/FieldLabel";
 import { TextInput, type TextInputType } from "@/components/atoms/TextInput";
 
 const AUTOCOMPLETE_BY_INPUT_TYPE: Record<TextInputType, string> = {
@@ -14,6 +15,7 @@ interface TextFieldProps {
   type?: TextInputType;
   placeholder?: string;
   hint?: string;
+  helpText?: string;
   inputMode?: HTMLAttributes<HTMLInputElement>["inputMode"];
   isDisabled?: boolean;
   onChange: (value: string) => void;
@@ -25,6 +27,7 @@ export function TextField({
   type = "text",
   placeholder,
   hint,
+  helpText,
   inputMode,
   isDisabled = false,
   onChange,
@@ -34,9 +37,7 @@ export function TextField({
 
   return (
     <div className="flex flex-col gap-2">
-      <label htmlFor={inputId} className="text-sm font-medium">
-        {label}
-      </label>
+      <FieldLabel htmlFor={inputId} label={label} helpText={helpText} />
       <TextInput
         id={inputId}
         type={type}

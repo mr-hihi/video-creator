@@ -7,6 +7,7 @@ import {
   MAX_PROMPT_LENGTH,
   type PromptSection,
 } from "@/features/promptPresets/constants";
+import { buildPromptInstructionsHelpText } from "@/features/promptPresets/utils";
 import { TextAreaField } from "./TextAreaField";
 
 interface PromptSectionEditorProps {
@@ -36,7 +37,13 @@ export function PromptSectionEditor({ section, value, defaultValue, appAddedPart
           </Button>
         </div>
       </div>
-      <TextAreaField label="Instructions" value={value} maxLength={MAX_PROMPT_LENGTH} onChange={onChange} />
+      <TextAreaField
+        label="Instructions"
+        value={value}
+        maxLength={MAX_PROMPT_LENGTH}
+        helpText={buildPromptInstructionsHelpText(section.title)}
+        onChange={onChange}
+      />
       <details className="rounded-lg border border-border bg-background px-3 py-2">
         <summary className="cursor-pointer text-sm text-muted">Added by the app</summary>
         <div className="mt-2">

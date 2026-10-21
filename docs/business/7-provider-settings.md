@@ -176,10 +176,10 @@ A sub-tab shows its provider:
 | Title | name, badge `API` / `Local` / `Extension` / `CLI` |
 | Status | `Ready` \| `Not set up` \| `Key unreadable — enter it again`; Google Flow: `Connected` \| `Not connected` \| `Paused — resumes in {s} s`; Claude CLI: `Signed in` \| `Not signed in` \| `CLI not found` — the check of 7.3, run when the `General` tab opens and at most once a minute after |
 | Queue | `Queued {n} · Running {n} · Failed (24 h) {n}` — this provider's requests; not on Claude CLI |
-| `API key` | `api` only; password field, placeholder `••••{last4}` when a key is stored; `Remove key` → confirm `Remove the API key of {name}?` |
-| `Base URL` | `local` only; hint `Run the adapter of tools/local-servers/ and enter its address.` on OmniVoice, ACE-Step and YuE |
-| Google Flow only | `Fallback Flow project id` field; `Resume now` while paused; `Open Flow tab`, disabled when not connected |
-| `Concurrent requests`, `Seconds between requests` | number fields; not on Claude CLI |
+| `API key` | `api` only; password field, placeholder `••••{last4}` when a key is stored; `Remove key` → confirm `Remove the API key of {name}?`; help `The key the app sends with every request to {name}. It is stored encrypted and never shown again, only its last 4 characters. Without a key the provider is not set up and its requests fail.` |
+| `Base URL` | `local` only; hint `Run the adapter of tools/local-servers/ and enter its address.` on OmniVoice, ACE-Step and YuE; help `The address of the local server the app calls, starting with http:// or https://. Without it the provider is not set up and its requests fail.` |
+| Google Flow only | `Fallback Flow project id` field, help `The id in the address of a Flow project you made. Used only when the app cannot create a Flow project for a film project or a film clone.`; `Resume now` while paused; `Open Flow tab`, disabled when not connected |
+| `Concurrent requests`, `Seconds between requests` | number fields; not on Claude CLI. Help: `How many requests to {name} can wait for an answer at once, 1–10. The others wait in the queue.` · `The least time between two requests sent to {name}, 0–600 s, to stay under its rate limit.` — on Google Flow followed by ` Google Flow always sends one at a time, at least 3 s apart.` |
 | Models line | line `Pick its models in AI models.`, `AI models` linking to `?tab=ai-models` |
 | Buttons | `Save` (enabled with unsaved changes; notice `Saved`; not on Claude CLI), `Test connection` → `OK` or the error, with the test time |
 
@@ -190,13 +190,16 @@ order of the select:
 
 | Group | Select | Rows |
 |---|---|---|
-| `Images` | `Images`: `Google Flow` \| `Google AI` \| `fal.ai` \| `Replicate` \| `OpenAI` \| `Stable Diffusion WebUI / Forge`; hint `Film Clone and Film Studio use it unless they pick their own.` | Google Flow, Google AI, fal.ai, Replicate, OpenAI: `Image model`, `Image edit model`; Stable Diffusion WebUI / Forge: line `Uses the model loaded in the server.` |
-| `Clips` | `Clips`: `Google Flow` \| `Google AI` \| `fal.ai` \| `Replicate`; hint `Film Studio uses it unless it picks its own.` | each: `Clip model` |
-| `Speech` | `Speech`: `OmniVoice` \| `ElevenLabs` \| `Google AI` | ElevenLabs, Google AI: `Speech model`; OmniVoice: line `Uses the model loaded in the server.` |
-| `Music` | `Music`: `ACE-Step` \| `ElevenLabs` \| `YuE` | ElevenLabs: `Music model`; ACE-Step, YuE: line `Uses the model loaded in the server.` |
+| `Images` | `Images`: `Google Flow` \| `Google AI` \| `fal.ai` \| `Replicate` \| `OpenAI` \| `Stable Diffusion WebUI / Forge`; hint `Film Clone and Film Studio use it unless they pick their own.`; help `The provider of every image of Film Clone and Film Studio, unless their own tab picks another. A queued image keeps the provider it was given.` | Google Flow, Google AI, fal.ai, Replicate, OpenAI: `Image model`, `Image edit model`; Stable Diffusion WebUI / Forge: line `Uses the model loaded in the server.` |
+| `Clips` | `Clips`: `Google Flow` \| `Google AI` \| `fal.ai` \| `Replicate`; hint `Film Studio uses it unless it picks its own.`; help `The provider of every clip of Film Studio, unless the Film Studio tab picks another. A queued clip keeps the provider it was given.` | each: `Clip model` |
+| `Speech` | `Speech`: `OmniVoice` \| `ElevenLabs` \| `Google AI`; help `The provider that reads the narration of Film Studio episodes aloud.` | ElevenLabs, Google AI: `Speech model`; OmniVoice: line `Uses the model loaded in the server.` |
+| `Music` | `Music`: `ACE-Step` \| `ElevenLabs` \| `YuE`; help `The provider that makes the music of Film Studio episodes.` | ElevenLabs: `Music model`; ACE-Step, YuE: line `Uses the model loaded in the server.` |
 
 - A model select lists the models of 7.5 for that provider and media kind, the saved one — else the default
-  — preselected.
+  — preselected. Help: `Image model` `The model {name} uses to make a new image.` · `Image edit model` `The
+  model {name} uses to change an existing image.` · `Clip model` `The model {name} uses to make a clip.` ·
+  `Speech model` `The model {name} uses to read text aloud.` · `Music model` `The model {name} uses to make
+  music.`
 - Badge `In use` on the row of every provider a request of the group goes to now: the route's, and for
   `Images` and `Clips` the providers Film Clone and Film Studio picked (6.1), as saved.
 - A row whose provider is not set up shows `Not set up — set it up in General.`, `General` linking to

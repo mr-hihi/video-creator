@@ -4,6 +4,7 @@ import { TextField } from "./TextField";
 interface ApiKeyFieldProps {
   value: string;
   placeholder: string | undefined;
+  helpText: string;
   hasStoredKey: boolean;
   isDisabled: boolean;
   isRemoveDisabled: boolean;
@@ -14,6 +15,7 @@ interface ApiKeyFieldProps {
 export function ApiKeyField({
   value,
   placeholder,
+  helpText,
   hasStoredKey,
   isDisabled,
   isRemoveDisabled,
@@ -28,6 +30,7 @@ export function ApiKeyField({
           type="password"
           value={value}
           placeholder={placeholder}
+          helpText={helpText}
           isDisabled={isDisabled}
           onChange={onChange}
         />

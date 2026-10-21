@@ -12,6 +12,7 @@ import { SelectField } from "./SelectField";
 interface MediaProviderSelectFieldProps<TProviderId extends ProviderId> {
   label: string;
   hint: string;
+  helpText: string;
   route: RouteName;
   value: TProviderId | null;
   providerIds: readonly TProviderId[];
@@ -23,6 +24,7 @@ interface MediaProviderSelectFieldProps<TProviderId extends ProviderId> {
 export function MediaProviderSelectField<TProviderId extends ProviderId>({
   label,
   hint,
+  helpText,
   route,
   value,
   providerIds,
@@ -40,6 +42,7 @@ export function MediaProviderSelectField<TProviderId extends ProviderId>({
         value={mediaProviderToOptionValue(value)}
         options={buildMediaProviderOptions(routeProvider.name, providerIds)}
         hint={hint}
+        helpText={helpText}
         isDisabled={isDisabled}
         onChange={(optionValue) => onChange(optionValueToMediaProvider(optionValue, providerIds))}
       />

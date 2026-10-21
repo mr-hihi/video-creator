@@ -9,6 +9,8 @@ import { NumberField } from "./NumberField";
 interface ProviderPacingFieldsProps {
   maxConcurrent: string;
   minIntervalS: string;
+  maxConcurrentHelpText: string;
+  minIntervalHelpText: string;
   isDisabled: boolean;
   onMaxConcurrentChange: (maxConcurrent: string) => void;
   onMinIntervalChange: (minIntervalS: string) => void;
@@ -17,6 +19,8 @@ interface ProviderPacingFieldsProps {
 export function ProviderPacingFields({
   maxConcurrent,
   minIntervalS,
+  maxConcurrentHelpText,
+  minIntervalHelpText,
   isDisabled,
   onMaxConcurrentChange,
   onMinIntervalChange,
@@ -28,6 +32,7 @@ export function ProviderPacingFields({
         value={maxConcurrent}
         min={MAX_CONCURRENT_LOWER_LIMIT}
         max={MAX_CONCURRENT_UPPER_LIMIT}
+        helpText={maxConcurrentHelpText}
         isDisabled={isDisabled}
         onChange={onMaxConcurrentChange}
       />
@@ -36,6 +41,7 @@ export function ProviderPacingFields({
         value={minIntervalS}
         min={MIN_INTERVAL_LOWER_LIMIT_S}
         max={MIN_INTERVAL_UPPER_LIMIT_S}
+        helpText={minIntervalHelpText}
         isDisabled={isDisabled}
         onChange={onMinIntervalChange}
       />

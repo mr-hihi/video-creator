@@ -56,15 +56,27 @@ A key without a row reads its default.
 ## 6.2 Screen `/settings`
 
 Header menu as in 1.7; every `/settings…` page highlights `Settings`. Tabs, in this order: `General`
-(default) · `AI models` · `Prompt override` (2.6) · `Film Clone` · `Film Studio`;
-`?tab=general|ai-models|prompt-override|film-clone|film-studio` selects one. `?tab=providers` redirects to
-`?tab=general`; `?tab=prompt-presets` redirects to `?tab=prompt-override` and keeps `id`.
+(default) · `AI models` · `Prompt override` (2.6) · `Film Analysis` · `Film Clone` · `Film Studio`;
+`?tab=general|ai-models|prompt-override|film-analysis|film-clone|film-studio` selects one. `?tab=providers`
+redirects to `?tab=general`; `?tab=prompt-presets` redirects to `?tab=prompt-override` and keeps `id`.
+
+**Field help**
+
+- Every field of `/settings` the user can change — each select, text, number and text area of every tab, the
+  provider sub-tabs included — has an `(i)` button right after its label, named `About {label}`. Read-only text
+  areas (`Added by the app`, the prompts of `History`) have none. Hovering it, or focusing it
+  with the keyboard, shows a tooltip with the field's help text; leaving it or pressing `Esc` hides it.
+- A field's hint, when it has one, stays one short sentence under the field; the help text says what the
+  field changes, where it is used and what each choice does.
+- The help texts: the tables below for `General`, `Film Analysis`, `Film Clone` and `Film Studio`; 8.4 for the
+  `Text` group of `AI models`; 7.4 for the provider sub-tabs and the `Images`, `Clips`, `Speech` and `Music`
+  groups; 2.6 for `Prompt override`.
 
 **Tab "General"**
 
 | Element | Detail |
 |---|---|
-| `Script language` | `Follow the target country` (default), then `Vietnamese`, `Japanese`, `Korean`, `Chinese`, `English`, `French`, `Thai`, `Hindi`, `Indonesian`; hint `The language Film Clone writes scripts in. Film Studio narrates only Vietnamese, English or Japanese.` |
+| `Script language` | `Follow the target country` (default), then `Vietnamese`, `Japanese`, `Korean`, `Chinese`, `English`, `French`, `Thai`, `Hindi`, `Indonesian`; hint `The language Film Clone writes scripts in.`; help `Film Clone writes the script of a clone in this language. Follow the target country: the language of the country picked in Localization, or the film's own language when no country is picked. A clone keeps the language it had when its localization was chosen. Film Studio narrates only Vietnamese, English or Japanese.` |
 | `Save` | saves `Script language` with `PATCH /settings`; enabled with unsaved changes; notice `Saved` |
 | Panel `Providers` | one sub-tab per provider, each with its own `Save` (7.4) |
 
@@ -72,24 +84,31 @@ Header menu as in 1.7; every `/settings…` page highlights `Settings`. Tabs, in
 
 | Element | Detail |
 |---|---|
-| Group `Text` | `All steps`, `Apply to all steps`, one row per step group, `Video to Markdown input` and `Film Analysis input` (8.4) |
+| Group `Text` | `All steps`, `Apply to all steps`, one row per step group and `Video to Markdown input` (8.4) |
 | Groups `Images`, `Clips`, `Speech`, `Music` | the provider of the group's route and the models of its providers (7.4) |
 | `Save` | saves every group with one `PATCH /settings/ai-models`, all or none; enabled with unsaved changes; notice `Saved` |
+
+**Tab "Film Analysis"**
+
+| Element | Detail |
+|---|---|
+| `Input mode` | `Subtitles` (default) \| `Frame image + audio` \| `Full video`; hint `What the model gets from the film.`; help `Subtitles: the model reads the transcript to pick key moments, then writes the prompts from their frames. Frame image + audio: it also sees one frame per second, and Gemini hears who speaks and the sounds, which add frames — slower, and Audio needs a Google AI model. Full video: Gemini watches the whole film, compressed to 480 px and 24 fps, and writes the prompts at once — no frames or video notes, and Film analysis needs a Google AI model.` Under it, the Google AI warning of 8.4 |
+| `Save` | `PATCH /settings`; enabled with unsaved changes; notice `Saved` |
 
 **Tab "Film Clone"**
 
 | Element | Detail |
 |---|---|
-| `Images with` | `Same as AI models ({provider name})` (default), then `Google Flow`, `Google AI`, `fal.ai`, `Replicate`, `OpenAI`, `Stable Diffusion WebUI / Forge`; hint `Makes the asset references and scene images of Film Clone.` |
-| `Input mode` | `Subtitles` (default) \| `Frame image + audio`; hint `Subtitles: the model reads the transcript to pick key moments. Frame image + audio: it also sees one frame per second, and Gemini hears who speaks and the sounds — slower, with more calls on long videos.` Under it, the Google AI warning of 8.4 when the `Audio` model saved is not a Google AI one |
+| `Images with` | `Same as AI models ({provider name})` (default), then `Google Flow`, `Google AI`, `fal.ai`, `Replicate`, `OpenAI`, `Stable Diffusion WebUI / Forge`; hint `Makes the asset references and scene images of Film Clone.`; help `The provider of the asset reference images and scene images of Film Clone. Same as AI models follows the Images route of the AI models tab; another choice applies to Film Clone only. A queued image keeps the provider it was given.` |
+| `Input mode` | `Subtitles` (default) \| `Frame image + audio`; hint `What the model gets from the film.`; help `Subtitles: the model reads the transcript to pick key moments. Frame image + audio: it also sees one frame per second, and Gemini hears who speaks and the sounds, which add sound shots — slower, with more calls on long videos, and Audio needs a Google AI model.` Under it, the Google AI warning of 8.4 |
 | `Save` | `PATCH /settings`; enabled with unsaved changes; notice `Saved` |
 
 **Tab "Film Studio"**
 
 | Element | Detail |
 |---|---|
-| `Images with` | as on `Film Clone`; hint `Makes the reference and scene images of Film Studio.` |
-| `Clips with` | `Same as AI models ({provider name})` (default), then `Google Flow`, `Google AI`, `fal.ai`, `Replicate`; hint `Makes the clips of Film Studio.` |
+| `Images with` | as on `Film Clone`; hint `Makes the reference and scene images of Film Studio.`; help `The provider of the reference images and scene images of Film Studio. Same as AI models follows the Images route of the AI models tab; another choice applies to Film Studio only. A queued image keeps the provider it was given.` |
+| `Clips with` | `Same as AI models ({provider name})` (default), then `Google Flow`, `Google AI`, `fal.ai`, `Replicate`; hint `Makes the clips of Film Studio.`; help `The provider of the scene clips of Film Studio. Same as AI models follows the Clips route of the AI models tab; another choice applies to Film Studio only. A queued clip keeps the provider it was given.` |
 | `Save` | `PATCH /settings`; enabled with unsaved changes; notice `Saved` |
 
 - `{provider name}` in `Same as AI models (…)` is the provider of the `image` or `video` route (7.2), as

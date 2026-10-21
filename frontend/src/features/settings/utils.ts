@@ -92,7 +92,6 @@ export function buildAiModelsUpdate(
     aiModel: pickChangedValue(draft.settings.aiModel, settings.aiModel, isSameAiModel),
     aiStepModels: pickChangedValue(draft.settings.aiStepModels, settings.aiStepModels, isSameStepModels),
     inputMode: pickChangedValue(draft.settings.inputMode, settings.inputMode),
-    filmAnalysisInputMode: pickChangedValue(draft.settings.filmAnalysisInputMode, settings.filmAnalysisInputMode),
     routes: Object.keys(changedRoutes).length > 0 ? changedRoutes : undefined,
     models: Object.keys(changedModels).length > 0 ? changedModels : undefined,
   };

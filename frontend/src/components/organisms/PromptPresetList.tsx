@@ -8,6 +8,7 @@ import { TextField } from "@/components/molecules/TextField";
 import {
   DEFAULT_PRESET_BADGE_LABEL,
   PRESET_EXPORT_ACCEPT,
+  PRESET_NAME_HELP_TEXT,
   SYSTEM_PRESET_BADGE_LABEL,
 } from "@/features/promptPresets/constants";
 import { useCreatePromptPresetMutation, useImportPromptPresetMutation } from "@/features/promptPresets/queries";
@@ -82,7 +83,7 @@ export function PromptPresetList({ presets, selectedPresetId, onSelect, onCreate
       </ul>
       {isNaming ? (
         <form onSubmit={handleCreate} className="flex flex-col gap-3">
-          <TextField label="Name" value={newName} isDisabled={isBusy} onChange={setNewName} />
+          <TextField label="Name" value={newName} helpText={PRESET_NAME_HELP_TEXT} isDisabled={isBusy} onChange={setNewName} />
           <div className="flex gap-2">
             <Button type="submit" disabled={!isValidPresetName(newName) || isBusy}>
               Create

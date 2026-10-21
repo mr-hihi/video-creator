@@ -22,7 +22,7 @@ Test cases for [business/6-settings.md](../business/6-settings.md). Acronym `ST`
   3. Reload the page
   4. `curl -s S`
 - **Expected:**
-  - Step 1: tabs `General` · `AI models` · `Prompt override` · `Film Clone` · `Film Studio`, `General` open; `Script language` = `Follow the target country` with the hint `The language Film Clone writes scripts in. Film Studio narrates only Vietnamese, English or Japanese.`; `Save` is disabled; below it the panel `Providers` with its first sub-tab `Google Flow` selected (7.4); no `AI models`, `Input mode`, `Images with` or `Clips with` field on this tab
+  - Step 1: tabs `General` · `AI models` · `Prompt override` · `Film Analysis` · `Film Clone` · `Film Studio`, `General` open; `Script language` = `Follow the target country` with the hint `The language Film Clone writes scripts in.`; `Save` is disabled; below it the panel `Providers` with its first sub-tab `Google Flow` selected (7.4); no `AI models`, `Input mode`, `Images with` or `Clips with` field on this tab
   - Step 2: notice `Saved`; `Save` is disabled again
   - Step 3: `Script language` = `Japanese`
   - Step 4: `{"scriptLanguage":"ja","aiModel":{"provider":"claude_cli","model":"default"},"aiStepModels":{"moments":null,"audio":null,"filmAnalysis":null,"filmScript":null,"filmClone":null},"inputMode":"subtitles","filmAnalysisInputMode":"subtitles","filmCloneInputMode":"subtitles","filmCloneImageProvider":null,"filmStudioImageProvider":null,"filmStudioClipProvider":null}`
@@ -115,9 +115,7 @@ Test cases for [business/6-settings.md](../business/6-settings.md). Acronym `ST`
 - **Expected:**
   - Step 1: `Images with` = `Same as AI models (Google Flow)` with the hint `Makes the asset references and scene
     images of Film Clone.`; `Input mode` = `Subtitles` (options `Subtitles`, `Frame image + audio`) with the
-    hint `Subtitles: the model reads the transcript to pick key moments. Frame image + audio: it also sees one
-    frame per second, and Gemini hears who speaks and the sounds — slower, with more calls on long videos.`;
-    `Save` is disabled
+    hint `What the model gets from the film.`; `Save` is disabled
   - Step 2: warning `OpenAI is not set up — set it up in General.`, `General` linking to
     `/settings?tab=general&provider=openai`
   - Step 3: notice `Saved`; no provider warning; under `Input mode` the warning `Frame image + audio needs a
@@ -168,3 +166,58 @@ Test cases for [business/6-settings.md](../business/6-settings.md). Acronym `ST`
   7. `HTTP 200`; `settings.inputMode` = `whole_video`; `providers.routes` = `{"image":"sd_webui","video":"replicate","speech":"omnivoice","music":"ace_step"}`
   8. `HTTP 400`, `detail` = `OpenAI cannot serve video`; `filmAnalysisInputMode` still `subtitles`
   9. `HTTP 200`; `settings.filmAnalysisInputMode` = `full_video`, `settings.inputMode` still `whole_video`
+
+### TC-ST-09: Film Analysis input mode
+- **App:** Frontend + API
+- **Precondition:** fresh test DB; `google` has no key.
+- **Steps:**
+  1. Navigate to http://localhost:5071/settings?tab=film-analysis
+  2. Select `Frame image + audio` from `Input mode`
+  3. Select `Full video` from `Input mode`; click `Save`; `curl -s S`
+  4. Click tab `AI models`
+  5. Navigate to `/film-analysis`; click the `Change` right after `Input: Full video`
+  6. `curl -s -X PATCH S -H 'Content-Type: application/json' -d '{"aiStepModels":{"filmAnalysis":{"provider":"google","model":"gemini-3.8-flash"}}}'`; reload the page
+- **Expected:**
+  - Step 1: tab `Film Analysis` open, between `Prompt override` and `Film Clone`; `Input mode` = `Subtitles` with the
+    options `Subtitles`, `Frame image + audio`, `Full video` and the hint `What the model gets from the film.`; no
+    warning; `Save` is disabled
+  - Step 2: under `Input mode`, `Frame image + audio needs a Google AI model here.`; `Save` is enabled
+  - Step 3: under `Input mode`, `Full video needs a Google AI model here.`; notice `Saved`; body has
+    `"filmAnalysisInputMode":"full_video"`, `"inputMode":"subtitles"`, `"filmCloneInputMode":"subtitles"`
+  - Step 4: group `Text` ends with `Video to Markdown input` — no `Film Analysis input`; under `Film analysis`,
+    `Full video needs a Google AI model here.`; no warning under `Audio`
+  - Step 5: `New analysis` reads `AI: Film analysis — Claude (CLI default) — needs Google AI · Input: Full video`,
+    with a link `Change` for the AI models and its own link `Change` right after `Input: Full video`; after the
+    click, URL becomes `/settings?tab=film-analysis` with `Input mode` = `Full video`
+  - Step 6: no warning under `Input mode`
+
+### TC-ST-10: Field help
+- **App:** Frontend
+- **Precondition:** fresh test DB.
+- **Steps:**
+  1. Navigate to http://localhost:5071/settings; hover the `(i)` after `Script language`
+  2. Move the mouse away; press `Tab` until `About Script language` has focus; press `Esc`
+  3. In `Providers`, on the sub-tab `Google AI (Gemini, Veo)` hover the `(i)` of `API key`, then of
+     `Concurrent requests`; on the sub-tab `Google Flow` hover the `(i)` of `Seconds between requests`
+  4. Click tab `AI models`; hover the `(i)` of `Audio`, of `Video to Markdown input`, of `Images` and of
+     `Image model` on the `Google AI` row
+  5. Click tab `Prompt override`; hover the `(i)` of `Instructions` in `Speakers & sounds`
+  6. Click tabs `Film Analysis`, `Film Clone` and `Film Studio` in turn; hover the `(i)` of each field
+  7. On every tab and provider sub-tab, count the select, text, number and text-area fields that can be changed
+     and the `(i)` buttons
+- **Expected:**
+  - Step 1: a tooltip `Film Clone writes the script of a clone in this language. Follow the target country: …`
+    (6.2); the hint `The language Film Clone writes scripts in.` stays under the field
+  - Step 2: no tooltip after the mouse leaves; the same tooltip while the button has focus; `Esc` hides it
+  - Step 3: `The key the app sends with every request to Google AI (Gemini, Veo). …`; `How many requests to Google
+    AI (Gemini, Veo) can wait for an answer at once, 1–10. The others wait in the queue.`; `The least time
+    between two requests sent to Google Flow, 0–600 s, to stay under its rate limit. Google Flow always sends
+    one at a time, at least 3 s apart.`
+  - Step 4: the help texts of 8.4 for `Audio` and `Video to Markdown input`; of 7.4 for `Images`, and `The model
+    Google AI (Gemini, Veo) uses to make a new image.` for `Image model`
+  - Step 5: `What the AI model is told to do for Speakers & sounds. A job copies these instructions when it is
+    created, …`
+  - Step 6: the help texts of 6.2 for `Input mode` (Film Analysis), `Images with` and `Input mode` (Film Clone),
+    `Images with` and `Clips with` (Film Studio)
+  - Step 7: every field that can be changed has exactly one `(i)` button, named `About {label}`; the read-only
+    `Added by the app` text areas have none

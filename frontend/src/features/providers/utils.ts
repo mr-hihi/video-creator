@@ -1,6 +1,9 @@
 import {
   ANALYSIS_MEDIA_KIND,
   API_KEY_MASK,
+  GOOGLE_FLOW_MIN_INTERVAL_HELP_SUFFIX,
+  MIN_INTERVAL_HELP_TEXT,
+  PROVIDER_NAME_PLACEHOLDER,
   PROVIDER_SHORT_NAMES,
   PROVIDER_STATUS_LABELS,
   ROUTE_FIELDS,
@@ -100,6 +103,15 @@ export function hasValidPacing(draft: ProviderDraft): boolean {
 export function buildApiKeyPlaceholder(provider: Provider): string | undefined {
   if (!provider.hasKey || provider.apiKeyLast4 === null) return undefined;
   return `${API_KEY_MASK}${provider.apiKeyLast4}`;
+}
+
+export function buildProviderHelpText(helpTextTemplate: string, providerName: string): string {
+  return helpTextTemplate.replace(PROVIDER_NAME_PLACEHOLDER, providerName);
+}
+
+export function buildMinIntervalHelpText(provider: Provider): string {
+  const helpText = buildProviderHelpText(MIN_INTERVAL_HELP_TEXT, provider.name);
+  return provider.id === "google_flow" ? `${helpText}${GOOGLE_FLOW_MIN_INTERVAL_HELP_SUFFIX}` : helpText;
 }
 
 export function computeRemainingPauseSeconds(pausedUntil: string | null, referenceTimeMs: number): number {

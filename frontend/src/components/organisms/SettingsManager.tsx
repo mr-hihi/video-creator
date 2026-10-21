@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { TabList } from "@/components/atoms/TabList";
 import {
   AI_MODELS_SETTINGS_TAB,
+  FILM_ANALYSIS_SETTINGS_TAB,
   FILM_CLONE_SETTINGS_TAB,
   FILM_STUDIO_SETTINGS_TAB,
   GENERAL_SETTINGS_TAB,
@@ -14,6 +15,7 @@ import {
 import { buildSettingsPath, resolveSettingsTab } from "@/features/settings/utils";
 import { UNSAVED_CHANGES_CONFIRMATION, useUnsavedPageChanges } from "@/lib/unsavedChanges";
 import { AiModelsSettingsForm } from "./AiModelsSettingsForm";
+import { FilmAnalysisSettingsForm } from "./FilmAnalysisSettingsForm";
 import { FilmCloneSettingsForm } from "./FilmCloneSettingsForm";
 import { FilmStudioSettingsForm } from "./FilmStudioSettingsForm";
 import { GeneralSettingsForm } from "./GeneralSettingsForm";
@@ -52,6 +54,9 @@ export function SettingsManager({ requestedTab, requestedPresetId, requestedProv
       {selectedTab === AI_MODELS_SETTINGS_TAB && <AiModelsSettingsForm onUnsavedChangesChange={reportUnsavedChanges} />}
       {selectedTab === PROMPT_OVERRIDE_SETTINGS_TAB && (
         <PromptPresetManager requestedPresetId={requestedPresetId} onUnsavedChangesChange={reportUnsavedChanges} />
+      )}
+      {selectedTab === FILM_ANALYSIS_SETTINGS_TAB && (
+        <FilmAnalysisSettingsForm onUnsavedChangesChange={reportUnsavedChanges} />
       )}
       {selectedTab === FILM_CLONE_SETTINGS_TAB && <FilmCloneSettingsForm onUnsavedChangesChange={reportUnsavedChanges} />}
       {selectedTab === FILM_STUDIO_SETTINGS_TAB && <FilmStudioSettingsForm onUnsavedChangesChange={reportUnsavedChanges} />}

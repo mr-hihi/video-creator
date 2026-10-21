@@ -1,7 +1,12 @@
 "use client";
 
 import { SelectField } from "@/components/molecules/SelectField";
-import { GENERAL_SETTINGS_FORM_KEY, SCRIPT_LANGUAGE_HINT, SCRIPT_LANGUAGE_OPTIONS } from "@/features/settings/constants";
+import {
+  GENERAL_SETTINGS_FORM_KEY,
+  SCRIPT_LANGUAGE_HELP_TEXT,
+  SCRIPT_LANGUAGE_HINT,
+  SCRIPT_LANGUAGE_OPTIONS,
+} from "@/features/settings/constants";
 import type { ScriptLanguage } from "@/features/settings/types";
 import { AppSettingsForm } from "./AppSettingsForm";
 
@@ -21,6 +26,7 @@ export function GeneralSettingsForm({ onUnsavedChangesChange }: GeneralSettingsF
           value={shownSettings.scriptLanguage}
           options={SCRIPT_LANGUAGE_OPTIONS}
           hint={SCRIPT_LANGUAGE_HINT}
+          helpText={SCRIPT_LANGUAGE_HELP_TEXT}
           isDisabled={isDisabled}
           onChange={(scriptLanguage) => onChange({ scriptLanguage })}
         />

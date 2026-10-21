@@ -8,7 +8,9 @@ import { labelsToSelectOptions } from "@/features/filmClones/utils";
 import { IMAGE_ROUTE_PROVIDER_IDS } from "@/features/providers/constants";
 import { useProviderSettingsQuery } from "@/features/providers/queries";
 import {
+  FILM_CLONE_IMAGE_PROVIDER_HELP_TEXT,
   FILM_CLONE_IMAGE_PROVIDER_HINT,
+  FILM_CLONE_INPUT_MODE_HELP_TEXT,
   FILM_CLONE_INPUT_MODE_HINT,
   FILM_CLONE_INPUT_MODE_LABELS,
   FILM_CLONE_SETTINGS_FORM_KEY,
@@ -43,6 +45,7 @@ export function FilmCloneSettingsForm({ onUnsavedChangesChange }: FilmCloneSetti
             <MediaProviderSelectField
               label="Images with"
               hint={FILM_CLONE_IMAGE_PROVIDER_HINT}
+              helpText={FILM_CLONE_IMAGE_PROVIDER_HELP_TEXT}
               route={ROUTES_BY_MEDIA_PROVIDER_SETTING.filmCloneImageProvider}
               value={shownSettings.filmCloneImageProvider}
               providerIds={IMAGE_ROUTE_PROVIDER_IDS}
@@ -55,6 +58,7 @@ export function FilmCloneSettingsForm({ onUnsavedChangesChange }: FilmCloneSetti
               value={shownSettings.filmCloneInputMode}
               options={FILM_CLONE_INPUT_MODE_OPTIONS}
               hint={FILM_CLONE_INPUT_MODE_HINT}
+              helpText={FILM_CLONE_INPUT_MODE_HELP_TEXT}
               isDisabled={isDisabled}
               onChange={(filmCloneInputMode) => onChange({ filmCloneInputMode })}
             />

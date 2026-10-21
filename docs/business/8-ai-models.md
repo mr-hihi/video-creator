@@ -344,21 +344,30 @@ Each prompt pass then sends the parts to the `filmAnalysis` model — Google AI 
 
 | Element | Detail |
 |---|---|
-| `All steps` | one select of every model of the `analysis` catalog (7.5), grouped under `Claude CLI`, `Google AI`, `OpenAI`, each option the model label; hint `The model of every step set to Same as all steps.` |
+| `All steps` | one select of every model of the `analysis` catalog (7.5), grouped under `Claude CLI`, `Google AI`, `OpenAI`, each option the model label; hint `The model of every step set to Same as all steps.`; help `Every step whose row below is Same as all steps uses this model. Claude CLI runs the signed-in claude command; Google AI and OpenAI need their key in General.` |
 | `Apply to all steps` | button next to `All steps`; sets the five rows below to `Same as all steps`; disabled when they all are. Saved with the tab's `Save` |
-| `Key moments`, `Audio`, `Film analysis`, `Film script`, `Film clone` | one select each: `Same as all steps ({model label})` first, then the models as in `All steps`. Hints: `Picks the key moments of every video.` · `Hears the speakers and sounds in Frame image + audio mode. Google AI only.` · `Writes the character image, voice and scene prompts. Google AI only in Full video mode.` · `Writes the scripts of Film Studio episodes.` · `Finds assets and shots, proposes changes and writes Film Clone scripts.` |
+| `Key moments`, `Audio`, `Film analysis`, `Film script`, `Film clone` | one select each: `Same as all steps ({model label})` first, then the models as in `All steps`. Hints: `Picks the key moments of every video.` · `Hears the speakers and sounds in Frame image + audio mode. Google AI only.` · `Writes the character image, voice and scene prompts. Google AI only in Full video mode.` · `Writes the scripts of Film Studio episodes.` · `Finds assets and shots, proposes changes and writes Film Clone scripts.` Help: `Picks the moments that get a frame, from the transcript — and from one frame per second in Whole video or Frame image + audio mode. Used by Video to Markdown, Film Analysis and Film Clone.` · `Listens to the film's audio in Frame image + audio mode of Film Analysis and Film Clone: tells the speakers apart by voice and marks actions, silences, ambient sounds and music, which add frames. Must be a Google AI model.` · `Writes the character image, character voice and scene prompts of Film Analysis. In Full video mode it watches the compressed film itself, so it must be a Google AI model.` · `Writes the outline, the part scripts and the story bible of Film Studio episodes.` · `Finds the assets and shots of a film, proposes the localized changes and writes the Film Clone script.` |
 | Warning | under `All steps`, or under a step row with a model of its own, when that model's provider is not set up: `{provider name} is not set up — add its key in General.`, `General` linking to `?tab=general&provider={id}` |
-| Google AI warning | under `Audio` when its model is not a `google` one and `Film Analysis input` or the `Film Clone` tab's `Input mode` is `Frame image + audio`: `Frame image + audio needs a Google AI model here.`; under `Film analysis` when its model is not a `google` one and `Film Analysis input` is `Full video`: `Full video needs a Google AI model here.` — both read from the values on screen |
-| `Video to Markdown input` | `Subtitles` (default) \| `Whole video`; hint `Subtitles: the model reads the transcript to pick key moments. Whole video: it also sees one frame per second — slower, with more calls on long videos.` |
-| `Film Analysis input` | `Subtitles` (default) \| `Frame image + audio` \| `Full video`; hint `Subtitles: the model reads the transcript to pick key moments. Frame image + audio: it also sees one frame per second, and Gemini hears who speaks and the sounds. Full video: Gemini watches the compressed film and writes the prompts — no frames or video notes.` Film Clone has its own, in the `Film Clone` tab (6.2) |
+| Google AI warning | under `Audio` when its model is not a `google` one and the saved `filmAnalysisInputMode` or `filmCloneInputMode` is `whole_video`: `Frame image + audio needs a Google AI model here.`; under `Film analysis` when its model is not a `google` one and the saved `filmAnalysisInputMode` is `full_video`: `Full video needs a Google AI model here.` — the models as on screen, the input modes as saved |
+| `Video to Markdown input` | `Subtitles` (default) \| `Whole video`; hint `What the model sees to pick key moments.`; help `Subtitles: the model reads only the transcript — the fastest. Whole video: it also sees one frame per second, so it can pick moments without speech — slower, with more calls on long videos.` Film Analysis and Film Clone have their own `Input mode`, in their tabs (6.2) |
+
+### Google AI warning of the `Film Analysis` and `Film Clone` tabs (6.2)
+
+Under `Input mode`, from the value on screen and the models as saved:
+
+| Tab | Input mode | Shown when | Warning |
+|---|---|---|---|
+| `Film Analysis` | `Frame image + audio` | the `Audio` model is not a `google` one | `Frame image + audio needs a Google AI model here.` |
+| `Film Analysis` | `Full video` | the `Film analysis` model is not a `google` one | `Full video needs a Google AI model here.` |
+| `Film Clone` | `Frame image + audio` | the `Audio` model is not a `google` one | `Frame image + audio needs a Google AI model here.` |
 
 ### Creation forms
 
 Panels `New conversion` (1.7), `New analysis` (3.6) and `New clone` (5.6) show, above the submit button, a
 read-only line `AI: {models} · Input: {mode label}` and a link `Change` → `/settings?tab=ai-models`; the mode
 label is that of 8.3 for the job's own setting — `inputMode`, `filmAnalysisInputMode` or
-`filmCloneInputMode`. On `New clone`, `Input` is followed by its own link `Change` →
-`/settings?tab=film-clone`. The `Rerun with another preset` panel and the `Send to Film Studio` dialog (3.6)
+`filmCloneInputMode`. On `New analysis` and `New clone`, `Input` is followed by its own link `Change` →
+`/settings?tab=film-analysis` or `/settings?tab=film-clone`. The `Rerun with another preset` panel and the `Send to Film Studio` dialog (3.6)
 and the `New episode` panel (4.5) show `AI: {models}` with a link `Change` → `/settings?tab=ai-models`.
 
 - `{models}` = the model label when every group the run uses (8.1 § Check at creation) has the same model;

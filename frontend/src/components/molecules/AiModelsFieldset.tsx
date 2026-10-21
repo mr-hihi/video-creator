@@ -4,14 +4,15 @@ import type { SelectOption } from "@/components/atoms/Select";
 import { labelsToSelectOptions } from "@/features/filmClones/utils";
 import type { Provider } from "@/features/providers/types";
 import {
+  AI_STEP_GROUP_HELP_TEXTS,
   AI_STEP_GROUP_HINTS,
   AI_STEP_GROUP_LABELS,
   AI_STEP_GROUPS,
+  ALL_STEPS_MODEL_HELP_TEXT,
   ALL_STEPS_MODEL_HINT,
-  FILM_ANALYSIS_INPUT_MODE_HINT,
-  FILM_ANALYSIS_INPUT_MODE_LABELS,
   SAME_AS_ALL_STEPS_OPTION_VALUE,
   SAME_AS_ALL_STEPS_STEP_MODELS,
+  VIDEO_TO_MARKDOWN_INPUT_MODE_HELP_TEXT,
   VIDEO_TO_MARKDOWN_INPUT_MODE_HINT,
   VIDEO_TO_MARKDOWN_INPUT_MODE_LABELS,
 } from "@/features/settings/constants";
@@ -35,11 +36,10 @@ import { ProviderNotSetUpAlert } from "./ProviderNotSetUpAlert";
 import { SelectField } from "./SelectField";
 
 const VIDEO_TO_MARKDOWN_INPUT_MODE_OPTIONS = labelsToSelectOptions(VIDEO_TO_MARKDOWN_INPUT_MODE_LABELS);
-const FILM_ANALYSIS_INPUT_MODE_OPTIONS = labelsToSelectOptions(FILM_ANALYSIS_INPUT_MODE_LABELS);
 
 interface AiModelsFieldsetProps {
   settings: AiModelSettings;
-  savedFilmCloneInputMode: InputMode;
+  savedFilmInputModes: readonly FilmAnalysisInputMode[];
   analysisProviders: readonly Provider[];
   isDisabled: boolean;
   onChange: (changes: Partial<AiModelSettings>) => void;
@@ -57,14 +57,13 @@ interface AiStepModelFieldProps {
 
 export function AiModelsFieldset({
   settings,
-  savedFilmCloneInputMode,
+  savedFilmInputModes,
   analysisProviders,
   isDisabled,
   onChange,
 }: AiModelsFieldsetProps) {
   const modelOptions = buildAiModelOptions(analysisProviders);
   const allStepsModel = resolveAiModel(settings.aiModel, analysisProviders);
-  const shownInputModes = [settings.filmAnalysisInputMode, savedFilmCloneInputMode];
   const stepModelOptions = [
     { value: SAME_AS_ALL_STEPS_OPTION_VALUE, label: describeSameAsAllStepsOption(allStepsModel.label) },
     ...modelOptions,
@@ -92,6 +91,7 @@ export function AiModelsFieldset({
           value={aiModelToOptionValue(settings.aiModel)}
           options={modelOptions}
           hint={ALL_STEPS_MODEL_HINT}
+          helpText={ALL_STEPS_MODEL_HELP_TEXT}
           isDisabled={isDisabled}
           action={
             <Button
@@ -113,7 +113,7 @@ export function AiModelsFieldset({
           key={group}
           group={group}
           stepModel={settings.aiStepModels[group]}
-          googleAiWarning={buildGoogleAiModelWarning(group, resolveStepGroupModel(settings, group), shownInputModes)}
+          googleAiWarning={buildGoogleAiModelWarning(group, resolveStepGroupModel(settings, group), savedFilmInputModes)}
           options={stepModelOptions}
           analysisProviders={analysisProviders}
           isDisabled={isDisabled}
@@ -125,16 +125,9 @@ export function AiModelsFieldset({
         value={settings.inputMode}
         options={VIDEO_TO_MARKDOWN_INPUT_MODE_OPTIONS}
         hint={VIDEO_TO_MARKDOWN_INPUT_MODE_HINT}
+        helpText={VIDEO_TO_MARKDOWN_INPUT_MODE_HELP_TEXT}
         isDisabled={isDisabled}
         onChange={(inputMode) => onChange({ inputMode })}
-      />
-      <SelectField<FilmAnalysisInputMode>
-        label="Film Analysis input"
-        value={settings.filmAnalysisInputMode}
-        options={FILM_ANALYSIS_INPUT_MODE_OPTIONS}
-        hint={FILM_ANALYSIS_INPUT_MODE_HINT}
-        isDisabled={isDisabled}
-        onChange={(filmAnalysisInputMode) => onChange({ filmAnalysisInputMode })}
       />
     </fieldset>
   );
@@ -158,6 +151,7 @@ function AiStepModelField({
         value={stepModel ? aiModelToOptionValue(stepModel) : SAME_AS_ALL_STEPS_OPTION_VALUE}
         options={options}
         hint={AI_STEP_GROUP_HINTS[group]}
+        helpText={AI_STEP_GROUP_HELP_TEXTS[group]}
         isDisabled={isDisabled}
         onChange={onChange}
       />

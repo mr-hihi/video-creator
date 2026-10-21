@@ -400,9 +400,13 @@ chosen when it is created.`
 
 - `Name` field, disabled on `Default`.
 - One section per prompt, in the order of the table above: title, `Used by` line, badge `Default`
-  (text equals the code default) or `Customized`, text area with counter `{n} / 20000`,
+  (text equals the code default) or `Customized`, text area `Instructions` with counter `{n} / 20000`,
   `Reset to default` (puts the code default in the text area; unsaved until `Save`), collapsed
   `Added by the app` with the read-only parts of 2.2.
+- Help (6.2): the `Name` fields `The name of the preset in every preset list. Default keeps its name.`;
+  each `Instructions` `What the AI model is told to do for {title}. A job copies these instructions when it is
+  created, so a change applies to new jobs only. The parts under Added by the app are added by the app and
+  cannot be changed.`
 - Actions: `Save` (enabled only with unsaved changes), `Discard changes`, `Set as default` (hidden on the
   default preset), `Duplicate`, `Export`, `History`, `Delete` (hidden on `Default`; disabled on the
   default preset with the hint `Set another preset as default first`).

@@ -8,7 +8,7 @@ import { Panel } from "@/components/atoms/Panel";
 import { PlaceholderMessage } from "@/components/atoms/PlaceholderMessage";
 import { PromptSectionEditor } from "@/components/molecules/PromptSectionEditor";
 import { TextField } from "@/components/molecules/TextField";
-import { PROMPT_SECTIONS, SET_DEFAULT_FIRST_HINT } from "@/features/promptPresets/constants";
+import { PRESET_NAME_HELP_TEXT, PROMPT_SECTIONS, SET_DEFAULT_FIRST_HINT } from "@/features/promptPresets/constants";
 import {
   useDeletePromptPresetMutation,
   useDuplicatePromptPresetMutation,
@@ -135,7 +135,13 @@ function PresetEditorForm({
   return (
     <Panel title="Editor">
       <div className="flex flex-col gap-6">
-        <TextField label="Name" value={draftName} isDisabled={preset.isSystem || isBusy} onChange={setDraftName} />
+        <TextField
+          label="Name"
+          value={draftName}
+          helpText={PRESET_NAME_HELP_TEXT}
+          isDisabled={preset.isSystem || isBusy}
+          onChange={setDraftName}
+        />
         <div className="flex flex-wrap items-center gap-2">
           <Button disabled={!canSave} onClick={save}>
             Save

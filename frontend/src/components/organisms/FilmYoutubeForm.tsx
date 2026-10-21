@@ -18,6 +18,7 @@ import {
 import { useCreateYoutubeFilmAnalysisJobMutation } from "@/features/jobs/queries";
 import { languageChanged, selectUploadLanguage } from "@/features/jobs/uploadPreferencesSlice";
 import { buildFilmAnalysisDetailPath, isValidMaxFrames } from "@/features/jobs/utils";
+import { FILM_ANALYSIS_SETTINGS_TAB } from "@/features/settings/constants";
 import { useAiModelStatus } from "@/features/settings/queries";
 import { isAiModelBlocked, isFullVideoInputMode } from "@/features/settings/utils";
 import { IS_CAPTCHA_ENABLED } from "@/lib/captcha/captchaWidget";
@@ -88,7 +89,7 @@ export function FilmYoutubeForm() {
       {isMaxFramesShown && (
         <MaxFramesField value={maxFramesText} isDisabled={isChecking} onChange={setMaxFramesText} />
       )}
-      {aiModelStatus && <AiModelLine status={aiModelStatus} />}
+      {aiModelStatus && <AiModelLine status={aiModelStatus} inputModeSettingsTab={FILM_ANALYSIS_SETTINGS_TAB} />}
       <Captcha ref={captchaRef} onToken={setCaptchaToken} onTokenCleared={() => setCaptchaToken(undefined)} />
       {createJobMutation.isError && <ErrorAlert>{createJobMutation.error.message}</ErrorAlert>}
       <Button type="submit" disabled={!canSubmit}>

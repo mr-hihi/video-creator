@@ -50,6 +50,7 @@ export function MediaRouteFieldset({
         value={routeProviderId}
         options={buildRouteOptions(routeField.providerIds)}
         hint={routeField.hint}
+        helpText={routeField.helpText}
         isDisabled={isDisabled}
         onChange={onRouteChange}
       />
